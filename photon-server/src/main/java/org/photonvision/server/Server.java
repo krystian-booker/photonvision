@@ -129,7 +129,7 @@ public class Server {
         app.get("/api/settings/camera/getCalibration", RequestHandler::onCalibrationJsonRequest);
         app.get("/api/settings/camera/getUncertainty", RequestHandler::onUncertaintyJsonRequest);
         app.post("/api/settings/camera/setRobotToCamera", RequestHandler::onSetRobotToCameraRequest);
-        app.post("/api/settings/aprilTagAcceleration", RequestHandler::onAprilTagAccelerationRequest);
+        app.post("/api/settings/performance", RequestHandler::onPerformanceSettingsRequest);
 
         // Utilities
         app.post("/api/utils/offlineUpdate", RequestHandler::onOfflineUpdateRequest);

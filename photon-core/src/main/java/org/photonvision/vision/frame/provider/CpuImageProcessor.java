@@ -17,6 +17,8 @@
 
 package org.photonvision.vision.frame.provider;
 
+import org.opencv.core.Mat;
+import org.opencv.imgproc.Imgproc;
 import org.photonvision.common.util.numbers.IntegerCouple;
 import org.photonvision.vision.frame.Frame;
 import org.photonvision.vision.frame.FrameProvider;
@@ -69,7 +71,21 @@ public abstract class CpuImageProcessor extends FrameProvider {
 
         CVMat outputMat = null;
         if (!input.colorImage.getMat().empty()) {
-            if (m_processType == FrameThresholdType.HSV) {
+            boolean isGray = input.colorImage.getMat().channels() == 1;
+            if (isGray && m_processType == FrameThresholdType.GREYSCALE) {
+                // Captured straight to grayscale: the processed image is a copy of the input
+                outputMat = new CVMat(input.colorImage.getMat().clone());
+            } else if (isGray) {
+                // The pipeline switched away from grayscale since this frame was captured
+                Mat bgr = new Mat();
+                Imgproc.cvtColor(input.colorImage.getMat(), bgr, Imgproc.COLOR_GRAY2BGR);
+                input.colorImage.release();
+                input.colorImage = new CVMat(bgr);
+            }
+
+            if (outputMat != null) {
+                // Already handled above
+            } else if (m_processType == FrameThresholdType.HSV) {
                 var hsvResult = m_hsvPipe.run(input.colorImage.getMat());
                 outputMat = new CVMat(hsvResult.output);
             } else if (m_processType == FrameThresholdType.GREYSCALE) {

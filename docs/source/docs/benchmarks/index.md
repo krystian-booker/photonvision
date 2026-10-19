@@ -5,4 +5,5 @@
 :titlesonly: true
 
 rknn-model-benchmarks
+apriltag-benchmark
 ```

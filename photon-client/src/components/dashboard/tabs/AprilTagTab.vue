@@ -14,6 +14,8 @@ const currentPipelineSettings = computed<AprilTagPipelineSettings>(
   () => useCameraSettingsStore().currentPipelineSettings as AprilTagPipelineSettings
 );
 const { mdAndDown } = useDisplay();
+// "CPU", "GPU (2.1 ms)", or "CPU (GPU unavailable: ...)", reported by the backend per frame
+const detectorBackend = computed<string | undefined>(() => useStateStore().currentPipelineResults?.detectorBackend);
 const interactiveCols = computed(() =>
   mdAndDown.value && (!useStateStore().sidebarFolded || useCameraSettingsStore().isDriverMode) ? 8 : 7
 );
@@ -35,7 +37,7 @@ const interactiveCols = computed(() =>
       v-model="currentPipelineSettings.decimate"
       :slider-cols="interactiveCols"
       label="Decimate"
-      tooltip="Increases FPS at the expense of range by reducing image resolution initially"
+      tooltip="Increases FPS at the expense of range by reducing image resolution initially. 2 is a good choice at 1280x800: with Refine Edges on, corners are still found at full resolution"
       :min="1"
       :max="8"
       @update:modelValue="(value) => useCameraSettingsStore().changeCurrentPipelineSetting({ decimate: value }, false)"
@@ -53,9 +55,9 @@ const interactiveCols = computed(() =>
     <pv-slider
       v-model="currentPipelineSettings.threads"
       :slider-cols="interactiveCols"
-      label="Threads"
-      tooltip="Number of threads spawned by the AprilTag detector"
-      :min="1"
+      :label="currentPipelineSettings.threads === 0 ? 'Threads (Auto)' : 'Threads'"
+      tooltip="Number of threads spawned by the AprilTag detector. 0 = automatic: the available CPU cores split across all cameras, which avoids cameras fighting over cores"
+      :min="0"
       :max="8"
       @update:modelValue="(value) => useCameraSettingsStore().changeCurrentPipelineSetting({ threads: value }, false)"
     />
@@ -90,5 +92,13 @@ const interactiveCols = computed(() =>
         (value) => useCameraSettingsStore().changeCurrentPipelineSetting({ refineEdges: value }, false)
       "
     />
+    <div v-if="detectorBackend" class="d-flex">
+      <v-col :cols="12 - interactiveCols" class="pl-0 py-1 d-flex align-center text-body-2">Detector</v-col>
+      <v-col :cols="interactiveCols" class="pr-0 py-1 d-flex align-center text-body-2">
+        <v-chip size="small" label :color="detectorBackend.startsWith('GPU') ? 'success' : undefined">
+          {{ detectorBackend }}
+        </v-chip>
+      </v-col>
+    </div>
   </div>
 </template>

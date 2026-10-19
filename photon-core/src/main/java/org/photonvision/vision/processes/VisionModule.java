@@ -270,8 +270,21 @@ public class VisionModule implements AutoCloseable {
 
         private boolean shouldRun = false;
 
+        private long lastStreamFrameNanos = 0;
+
         public StreamRunnable(OutputStreamPipeline outputStreamPipeline) {
             this.outputStreamPipeline = outputStreamPipeline;
+        }
+
+        /**
+         * True if enough time has passed since the last streamed frame (HardwareSettings.maxStreamFps).
+         */
+        private boolean streamFrameDue() {
+            int maxFps = ConfigProvider.getInstance().getConfig().getHardwareSettings().maxStreamFps;
+            long now = System.nanoTime();
+            if (maxFps > 0 && now - lastStreamFrameNanos < 1_000_000_000L / maxFps) return false;
+            lastStreamFrameNanos = now;
+            return true;
         }
 
         public void updateData(
@@ -310,7 +323,7 @@ public class VisionModule implements AutoCloseable {
 
                     this.shouldRun = false;
                 }
-                if (shouldRun) {
+                if (shouldRun && streamFrameDue()) {
                     try {
                         CVPipelineResult osr = outputStreamPipeline.process(m_frame, settings, targets);
                         consumeResults(m_frame, targets);
@@ -327,6 +340,10 @@ public class VisionModule implements AutoCloseable {
                             logger.error("Exception freeing frames", e);
                         }
                     }
+                } else if (shouldRun) {
+                    // Over the stream FPS cap: drop this frame rather than render and encode it
+                    if (targets != null) targets.forEach(TrackedTarget::release);
+                    m_frame.release();
                 } else {
                     // busy wait! hurray!
                     try {

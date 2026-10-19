@@ -78,7 +78,12 @@ export const useSettingsStore = defineStore("settings", {
       availableModels: [],
       supportedBackends: [],
       conflictingHostname: false,
-      conflictingCameras: ""
+      conflictingCameras: "",
+      aprilTagAcceleration: "AUTO",
+      gpuAprilTagAvailable: false,
+      gpuAprilTagStatus: "",
+      grayscaleCapture: true,
+      maxStreamFps: 30
     },
     network: {
       ntServerAddress: "",
@@ -167,7 +172,12 @@ export const useSettingsStore = defineStore("settings", {
         availableModels: data.general.availableModels || undefined,
         supportedBackends: data.general.supportedBackends || [],
         conflictingHostname: data.general.conflictingHostname || false,
-        conflictingCameras: data.general.conflictingCameras || ""
+        conflictingCameras: data.general.conflictingCameras || "",
+        aprilTagAcceleration: data.general.aprilTagAcceleration || "AUTO",
+        gpuAprilTagAvailable: data.general.gpuAprilTagAvailable || false,
+        gpuAprilTagStatus: data.general.gpuAprilTagStatus || "",
+        grayscaleCapture: data.general.grayscaleCapture ?? true,
+        maxStreamFps: data.general.maxStreamFps ?? 30
       };
       this.lighting = data.lighting;
       this.network = data.networkSettings;

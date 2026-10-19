@@ -296,7 +296,7 @@ export const DefaultAprilTagPipelineSettings: AprilTagPipelineSettings = {
   decisionMargin: 35,
   refineEdges: true,
   debug: false,
-  threads: 4,
+  threads: 0,
   tagFamily: AprilTagFamily.Family36h11,
   doMultiTarget: false,
   doSingleTargetAlways: false

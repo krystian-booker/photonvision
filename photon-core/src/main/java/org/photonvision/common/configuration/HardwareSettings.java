@@ -28,12 +28,23 @@ public class HardwareSettings {
     /** Where AprilTag detection runs. AUTO uses the GPU on validated platforms (Rubik Pi 3). */
     public AprilTagAcceleration aprilTagAcceleration = AprilTagAcceleration.AUTO;
 
+    /**
+     * For pipelines that only need grayscale (AprilTag, ArUco), have cscore decode camera frames
+     * straight to grayscale instead of to color and then converting.
+     */
+    public boolean grayscaleCapture = true;
+
+    /** Cap on how often the dashboard streams are rendered and encoded. 0 = unlimited. */
+    public int maxStreamFps = 30;
+
     @Override
     public int hashCode() {
         final int prime = 31;
         int result = 1;
         result = prime * result + ledBrightnessPercentage;
         result = prime * result + Objects.hashCode(aprilTagAcceleration);
+        result = prime * result + (grayscaleCapture ? 1 : 0);
+        result = prime * result + maxStreamFps;
         return result;
     }
 
@@ -45,6 +56,8 @@ public class HardwareSettings {
         HardwareSettings other = (HardwareSettings) obj;
         if (ledBrightnessPercentage != other.ledBrightnessPercentage) return false;
         if (aprilTagAcceleration != other.aprilTagAcceleration) return false;
+        if (grayscaleCapture != other.grayscaleCapture) return false;
+        if (maxStreamFps != other.maxStreamFps) return false;
         return true;
     }
 
@@ -54,6 +67,10 @@ public class HardwareSettings {
                 + ledBrightnessPercentage
                 + ", aprilTagAcceleration="
                 + aprilTagAcceleration
+                + ", grayscaleCapture="
+                + grayscaleCapture
+                + ", maxStreamFps="
+                + maxStreamFps
                 + "]";
     }
 }

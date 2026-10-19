@@ -7,4 +7,5 @@ detector-types
 3D-tracking
 multitag
 coordinate-systems
+gpu-acceleration
 ```

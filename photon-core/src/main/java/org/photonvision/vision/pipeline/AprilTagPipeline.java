@@ -39,6 +39,7 @@ import org.photonvision.vision.pipe.impl.CalculateFPSPipe;
 import org.photonvision.vision.pipe.impl.MultiTargetPNPPipe;
 import org.photonvision.vision.pipe.impl.MultiTargetPNPPipe.MultiTargetPNPPipeParams;
 import org.photonvision.vision.pipeline.result.CVPipelineResult;
+import org.photonvision.vision.processes.VisionSourceManager;
 import org.photonvision.vision.target.TrackedTarget;
 import org.photonvision.vision.target.TrackedTarget.TargetCalculationParameters;
 import org.wpilib.math.geometry.CoordinateSystem;
@@ -74,8 +75,8 @@ public class AprilTagPipeline extends CVPipeline<CVPipelineResult, AprilTagPipel
 
     @Override
     protected void setPipeParamsImpl() {
-        // Sanitize thread count - not supported to have fewer than 1 threads
-        settings.threads = Math.max(1, settings.threads);
+        // Sanitize thread count - negative is invalid, 0 means automatic
+        settings.threads = Math.max(0, settings.threads);
 
         // for now, hard code tag width based on enum value
         // From 2024 best guess is 6.5
@@ -88,7 +89,7 @@ public class AprilTagPipeline extends CVPipeline<CVPipelineResult, AprilTagPipel
         }
 
         var config = new AprilTagDetector.Config();
-        config.numThreads = settings.threads;
+        config.numThreads = settings.threads > 0 ? settings.threads : autoThreadCount();
         config.refineEdges = settings.refineEdges;
         config.quadSigma = (float) settings.blur;
         config.quadDecimate = settings.decimate;
@@ -132,6 +133,22 @@ public class AprilTagPipeline extends CVPipeline<CVPipelineResult, AprilTagPipel
                         new MultiTargetPNPPipeParams(frameStaticProperties.cameraCalibration, field, tagModel));
             }
         }
+    }
+
+    /**
+     * Automatic detector thread count: the cores this process may use, split across the active
+     * cameras. Giving every camera 4 threads oversubscribes small boards (e.g. 3 cameras on the 4
+     * cores the Rubik Pi image allows PhotonVision).
+     */
+    static int autoThreadCount() {
+        int cores = Runtime.getRuntime().availableProcessors();
+        int cameras = 1;
+        try {
+            cameras = Math.max(1, VisionSourceManager.getInstance().vmm.getModules().size());
+        } catch (RuntimeException e) {
+            // No vision modules yet (tests, startup)
+        }
+        return Math.max(1, cores / cameras);
     }
 
     @Override

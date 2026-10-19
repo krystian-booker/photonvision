@@ -18,7 +18,6 @@
 package org.photonvision.common.dataflow.websocket;
 
 import io.avaje.jsonb.Json;
-import java.util.ArrayList;
 import java.util.List;
 import org.photonvision.PhotonVersion;
 import org.photonvision.common.LoadJNI;
@@ -52,6 +51,8 @@ public class UIPhotonConfiguration {
         var general = ui.settings.general;
         var mode = c.getHardwareSettings().aprilTagAcceleration;
         general.aprilTagAcceleration = mode.name();
+        general.grayscaleCapture = c.getHardwareSettings().grayscaleCapture;
+        general.maxStreamFps = c.getHardwareSettings().maxStreamFps;
         // Only probe the GPU where it would be used: creating a Vulkan device on an untested driver
         // is not free of risk
         if (AprilTagDetectionPipe.gpuRequested(mode)) {
@@ -66,16 +67,6 @@ public class UIPhotonConfiguration {
                             : "Not enabled by default on this platform (select GPU to try it)";
         }
         return ui;
-    }
-
-    private static String describeGpuAcceleration(PhotonConfiguration c) {
-        List<String> parts = new ArrayList<>();
-        if (LoadJNI.hasLoaded(JNITypes.LIBCAMERA)) parts.add("Zerocopy Libcamera Working");
-        if (AprilTagDetectionPipe.gpuRequested(c.getHardwareSettings().aprilTagAcceleration)
-                && GpuAprilTagDetector.queryDevice(false).available()) {
-            parts.add("Vulkan AprilTag detection");
-        }
-        return String.join(", ", parts);
     }
 
     private static UIPhotonConfiguration buildUi(PhotonConfiguration c) {
@@ -93,7 +84,10 @@ public class UIPhotonConfiguration {
                                 OsImageData.IMAGE_METADATA.isPresent()
                                         ? OsImageData.IMAGE_METADATA.get().commitTag()
                                         : "",
-                                describeGpuAcceleration(c),
+                                // TODO add support for other types of GPU accel. GPU AprilTag status is reported
+                                // separately
+                                // (gpuAprilTagStatus): the UI uses this string to mean libcamera.
+                                LoadJNI.hasLoaded(JNITypes.LIBCAMERA) ? "Zerocopy Libcamera Working" : "",
                                 LoadJNI.hasLoaded(JNITypes.MRCAL),
                                 c.getNeuralNetworkProperties().getModels(),
                                 NeuralNetworkModelManager.getInstance().getSupportedBackends(),

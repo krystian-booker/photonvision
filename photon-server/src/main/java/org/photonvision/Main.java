@@ -24,6 +24,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.Callable;
 import org.opencv.core.Size;
+import org.photonvision.benchmark.AprilTagBenchmark;
 import org.photonvision.common.LoadJNI;
 import org.photonvision.common.LoadJNI.JNITypes;
 import org.photonvision.common.configuration.CameraConfiguration;
@@ -100,6 +101,44 @@ public class Main implements Callable<Integer> {
             names = {"-p", "--platform"},
             description = "Specify platform override, based on Platform enum")
     private Optional<Platform> platform;
+
+    @Option(
+            names = {"--benchmark-apriltag"},
+            description =
+                    "Benchmark AprilTag detection on recorded frames (--benchmark-images) and exit."
+                            + " Stop the PhotonVision service first so it isn't competing for the CPU/GPU.")
+    private boolean benchmarkAprilTag;
+
+    @Option(
+            names = {"--benchmark-images"},
+            description = "Directory of recorded camera frames (.jpg) for --benchmark-apriltag")
+    private Optional<Path> benchmarkImages;
+
+    @Option(
+            names = {"--benchmark-cameras"},
+            split = ",",
+            defaultValue = "1,2,3,4",
+            description = "Simulated camera counts, e.g. 1,2,3,4")
+    private List<Integer> benchmarkCameras;
+
+    @Option(
+            names = {"--benchmark-scenarios"},
+            defaultValue = "baseline,cpu-d2,gpu-d1,gpu-d2",
+            description =
+                    "Scenarios: baseline (today's defaults), cpu-d1, cpu-d2, gpu-d1, gpu-d2, or"
+                            + " cpu|gpu:d<decimate>:t<threads>:gray|color")
+    private String benchmarkScenarios;
+
+    @Option(
+            names = {"--benchmark-seconds"},
+            defaultValue = "15",
+            description = "Seconds per benchmark run")
+    private double benchmarkSeconds;
+
+    @Option(
+            names = {"--benchmark-out"},
+            description = "Write the benchmark report as JSON to this file")
+    private Optional<Path> benchmarkOut;
 
     private static void addTestModeSources() {
         ConfigProvider.getInstance().load();
@@ -254,6 +293,25 @@ public class Main implements Callable<Integer> {
         if (!HAL.initialize()) {
             logger.error("Failed to initialize the HAL! Giving up :(");
             return 1;
+        }
+
+        if (benchmarkAprilTag) {
+            if (benchmarkImages.isEmpty()) {
+                logger.error("--benchmark-apriltag needs --benchmark-images <directory>");
+                return 1;
+            }
+            try {
+                AprilTagBenchmark.runAll(
+                        benchmarkImages.get(),
+                        benchmarkCameras,
+                        AprilTagBenchmark.parseScenarios(benchmarkScenarios),
+                        benchmarkSeconds,
+                        benchmarkOut.orElse(null));
+                return 0;
+            } catch (Exception e) {
+                logger.error("AprilTag benchmark failed", e);
+                return 1;
+            }
         }
 
         if (Platform.isRaspberryPi()) {

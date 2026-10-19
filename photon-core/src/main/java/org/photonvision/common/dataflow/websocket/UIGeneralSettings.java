@@ -64,4 +64,6 @@ public class UIGeneralSettings {
     public String aprilTagAcceleration = "AUTO";
     public boolean gpuAprilTagAvailable = false;
     public String gpuAprilTagStatus = "";
+    public boolean grayscaleCapture = true;
+    public int maxStreamFps = 30;
 }

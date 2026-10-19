@@ -3,6 +3,8 @@ import type { Pose3d } from "@/types/PhotonTrackingTypes";
 import type { WebsocketCameraSettingsUpdate } from "./WebsocketDataTypes";
 import { reactive } from "vue";
 
+export type AprilTagAcceleration = "AUTO" | "GPU" | "CPU";
+
 export interface GeneralSettings {
   version?: string;
   imageVersion?: string;
@@ -15,6 +17,11 @@ export interface GeneralSettings {
   supportedBackends: string[];
   conflictingHostname: boolean;
   conflictingCameras: string;
+  aprilTagAcceleration: AprilTagAcceleration;
+  gpuAprilTagAvailable: boolean;
+  gpuAprilTagStatus: string;
+  grayscaleCapture: boolean;
+  maxStreamFps: number;
 }
 
 export interface ObjectDetectionModelProperties {

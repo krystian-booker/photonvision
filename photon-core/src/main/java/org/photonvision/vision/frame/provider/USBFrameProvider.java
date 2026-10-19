@@ -18,9 +18,11 @@
 package org.photonvision.vision.frame.provider;
 
 import org.opencv.core.Mat;
+import org.photonvision.common.configuration.ConfigProvider;
 import org.photonvision.common.logging.LogGroup;
 import org.photonvision.common.logging.Logger;
 import org.photonvision.jni.CscoreExtras;
+import org.photonvision.vision.frame.FrameThresholdType;
 import org.photonvision.vision.opencv.CVMat;
 import org.photonvision.vision.processes.VisionSourceSettables;
 import org.wpilib.util.PixelFormat;
@@ -65,7 +67,13 @@ public class USBFrameProvider extends CpuImageProcessor {
             onCameraConnected();
         }
 
-        if (m_blockForFrames) {
+        // AprilTag/ArUco only need luma: decoding MJPEG straight to gray skips chroma upsampling, color
+        // conversion and the BGR->gray pass
+        boolean wantGray =
+                m_processType == FrameThresholdType.GREYSCALE
+                        && ConfigProvider.getInstance().getConfig().getHardwareSettings().grayscaleCapture;
+
+        if (m_blockForFrames && !wantGray) {
             // We allocate memory so we don't fill a Mat in use by another thread (memory model is easier)
             var mat = new CVMat();
             // This is from wpi::nt::Now, or WPIUtilJNI.now(). The epoch from grabFrame is nS since
@@ -89,9 +97,8 @@ public class USBFrameProvider extends CpuImageProcessor {
             frame.setInfo(
                     cameraMode.width,
                     cameraMode.height,
-                    // hard-coded 3 channel
-                    cameraMode.width * 3,
-                    PixelFormat.BGR);
+                    wantGray ? cameraMode.width : cameraMode.width * 3,
+                    wantGray ? PixelFormat.GRAY : PixelFormat.BGR);
 
             // This is from wpi::nt::Now, or WPIUtilJNI.now(). The epoch from grabFrame is nS since
             // Hal::initialize was called

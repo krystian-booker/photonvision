@@ -1,6 +1,7 @@
 # GPU-Accelerated AprilTag Detection on the Rubik Pi 3
 
-Status: proposal. Nothing here is implemented yet.
+Status: implemented, awaiting on-device testing on a Rubik Pi 3. See
+[section 10](#10-implementation-status).
 
 ## 1. Summary
 
@@ -278,3 +279,40 @@ Everything in section 3.2:
 - Rubik Pi OpenCL on the Ubuntu image (community):
   <https://community.rubikpi.ai/t/how-can-i-enable-opencl-on-rubik-pi-when-the-ubuntu-image-lacks-libopencl-so/385>
 - OpenCV FastCV HAL: <https://docs.opencv.org/4.x/d5/d06/tutorial_building_fastcv.html>
+
+
+## 10. Implementation status
+
+Built and pushed on this branch; not yet run on a Rubik Pi 3.
+
+### What was built
+
+| Area | Where |
+| --- | --- |
+| GPU detector | Vendored **vkapriltag** (pinned commit in `photon-targeting/src/main/native/thirdparty/vkapriltag/VERSION`) plus the patched AprilTag 3.4.5 core it decodes with, built as the Linux-only static component `photongpuapriltag` and linked into the existing `photontargetingJNI` library. There is no separate repository or artifact. |
+| Safety | Every vendored AprilTag symbol is renamed (`symbol_prefix.h`) and hidden, so it can't collide with WPILib's apriltag. Vulkan is loaded with `dlopen` at runtime (`vulkan_loader_shim.cpp`), so the library loads and reports "unavailable" on machines without Vulkan. Software Vulkan devices are refused unless `APRILTAG_VK_ALLOW_CPU=1` is set (tests only). |
+| Java | `GpuAprilTagJNI` (photon-targeting) and `GpuAprilTagDetector` (photon-core). `AprilTagDetectionPipe` picks GPU or CPU per frame and falls back to the CPU on any problem. Results carry `detectorBackend` (shown in the AprilTag tab). |
+| Setting | `HardwareSettings.aprilTagAcceleration` = AUTO (default; GPU on QCS6490 only), GPU or CPU. Set through `POST /api/settings/performance` and the new Settings → Performance card, which also shows GPU status. The GPU is probed only where it would be used. |
+| CPU wins | `grayscaleCapture` (cscore decodes MJPEG straight to gray for AprilTag/ArUco; default on), automatic detector threads (`threads = 0` splits cores across cameras; new default), `maxStreamFps` (default 30), and decimate-2 guidance in the UI tooltip. |
+| Benchmark | `java -jar photonvision.jar --benchmark-apriltag ...` (`AprilTagBenchmark`) and `scripts/rubik_apriltag_benchmark.sh` (system and driver report, records frames from every camera, runs the comparison on the service's CPU cores, packs a `.tar.gz`). |
+| Docs | `docs/.../apriltag-pipelines/gpu-acceleration.md` and `docs/.../benchmarks/apriltag-benchmark.md`. |
+| Tests | `GpuAprilTagDetectorTest` (GPU vs WPILib CPU on the test images via Mesa lavapipe, plus fallback behaviour) and `AprilTagBenchmarkTest`. |
+
+### Verified so far, without the board
+
+- **Matches the CPU detector:** on PhotonVision's test images, the GPU path finds exactly the same tag36h11 IDs as WPILib's CPU detector at decimation 1 (314 tags) and 2 (311 tags). Mean corner difference is 0.16 px; the remaining gap comes from AprilTag 3.4.5's bilinear edge refinement versus WPILib's older nearest-pixel version.
+- **Builds for the board's architecture:** cross-compiles for `linuxarm64` with WPILib's toolchain. The resulting library has no link-time Vulkan dependency.
+
+### Deviations from the plan
+
+- **No new repository:** vendored into photon-targeting instead, as requested, to keep everything on this branch.
+- **Vulkan backend only:** no OpenCL backend.
+- **Some tuning not done:** zero-copy import (dma-buf / host pointer) and frame pipelining (vkapriltag's `FramePipeline`) are not wired up. The current path copies each grayscale frame into a GPU buffer, which is cheap on unified memory.
+- **Blur unsupported on the GPU:** blur (`quadSigma`) and non-integer decimation fall back to the CPU.
+- **GPU cluster-size floor:** vkapriltag's own cluster-size floor is used rather than PhotonVision's `minClusterPixels = 5`, because that is how its parity was validated.
+
+### To do with the board (Phase 0 / 4)
+
+1. Run `scripts/rubik_apriltag_benchmark.sh` and share the archive. It covers drivers, recording, the CPU/GPU comparison and the timings.
+2. If Vulkan is missing on the image, add the Adreno Vulkan packages (`qcom-adreno` Vulkan ICD) in photon-image-modifier.
+3. Tune if needed: workgroup sizes (`APRILTAG_VK_*` environment variables), zero-copy import, pipelining.

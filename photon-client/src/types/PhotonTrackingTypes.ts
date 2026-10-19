@@ -81,4 +81,6 @@ export interface PipelineResult {
   multitagResult?: MultitagResult;
   // Object detection class names -- empty if not doing object detection
   classNames: string[];
+  // AprilTag pipelines: which detector ran ("CPU", "GPU (2.1 ms)", ...)
+  detectorBackend?: string;
 }

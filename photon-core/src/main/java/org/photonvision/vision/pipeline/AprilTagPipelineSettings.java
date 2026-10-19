@@ -24,7 +24,8 @@ public class AprilTagPipelineSettings extends AdvancedPipelineSettings {
     public AprilTagFamily tagFamily = AprilTagFamily.kTag36h11;
     public int decimate = 1;
     public double blur = 0;
-    public int threads = 4; // Multiple threads seems to be better performance on most platforms
+    // Detector threads. 0 = automatic: the available cores split across the active cameras
+    public int threads = 0;
     public boolean debug = false;
     public boolean refineEdges = true;
     public int numIterations = 40;

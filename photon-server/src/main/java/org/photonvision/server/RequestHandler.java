@@ -1689,14 +1689,28 @@ public class RequestHandler {
     }
 
     @Json
-    record AprilTagAccelerationRequest(String mode) {}
+    record PerformanceSettingsRequest(
+            @Nullable String aprilTagAcceleration,
+            @Nullable Boolean grayscaleCapture,
+            @Nullable Integer maxStreamFps) {}
 
-    /** Choose where AprilTag detection runs: AUTO, GPU or CPU. */
-    public static void onAprilTagAccelerationRequest(Context ctx) {
+    /**
+     * Update performance settings: where AprilTag detection runs (AUTO, GPU, CPU), grayscale capture,
+     * and the dashboard stream FPS cap. Fields left out are unchanged.
+     */
+    public static void onPerformanceSettingsRequest(Context ctx) {
         try {
-            var request = ctx.bodyAsClass(AprilTagAccelerationRequest.class);
-            var mode = AprilTagAcceleration.valueOf(request.mode().toUpperCase());
-            ConfigProvider.getInstance().getConfig().getHardwareSettings().aprilTagAcceleration = mode;
+            var request = ctx.bodyAsClass(PerformanceSettingsRequest.class);
+            var hw = ConfigProvider.getInstance().getConfig().getHardwareSettings();
+            if (request.aprilTagAcceleration() != null) {
+                hw.aprilTagAcceleration =
+                        AprilTagAcceleration.valueOf(request.aprilTagAcceleration().toUpperCase());
+            }
+            if (request.grayscaleCapture() != null) hw.grayscaleCapture = request.grayscaleCapture();
+            if (request.maxStreamFps() != null) {
+                if (request.maxStreamFps() < 0) throw new IllegalArgumentException("maxStreamFps < 0");
+                hw.maxStreamFps = request.maxStreamFps();
+            }
             ConfigProvider.getInstance().requestSave();
             DataChangeService.getInstance()
                     .publishEvent(
@@ -1704,13 +1718,13 @@ public class RequestHandler {
                                     "fullsettings",
                                     UIPhotonConfiguration.programStateToUi(
                                             ConfigProvider.getInstance().getConfig())));
-            ctx.status(200).result("AprilTag acceleration set to " + mode);
-            logger.info("AprilTag acceleration set to " + mode);
-        } catch (IllegalArgumentException
-                | NullPointerException
-                | IllegalStateException
-                | JsonException e) {
-            ctx.status(400).result("Mode must be one of AUTO, GPU, CPU");
+            ctx.status(200).result("Performance settings saved");
+            logger.info("Performance settings: " + hw);
+        } catch (IllegalArgumentException | IllegalStateException | JsonException e) {
+            ctx.status(400)
+                    .result(
+                            "Invalid performance settings (aprilTagAcceleration must be AUTO, GPU or CPU): "
+                                    + e.getMessage());
         }
     }
 }
