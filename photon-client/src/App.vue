@@ -51,6 +51,9 @@ if (!is_demo) {
       if (data.visionSourceManager !== undefined) {
         useStateStore().updateDiscoveredCameras(data.visionSourceManager);
       }
+      if (data.extrinsicCalibration !== undefined) {
+        useStateStore().updateExtrinsicCalibrationStatus(data.extrinsicCalibration);
+      }
     },
     () => {
       useStateStore().$patch({ backendConnected: false });

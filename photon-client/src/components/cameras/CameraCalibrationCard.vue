@@ -361,27 +361,28 @@ const viewPendingCalibration = () => {
     });
 };
 
-// Calibration stream overlay: 0 = collected corners, 1 = off, 2 = exclusion zone
+// Calibration stream overlay: 0 = collected corners, 1 = off, 2 = coverage, 3 = exclusion zone
 const overlayMode = ref(1);
 // Exclusion zone is only needed when autoCalibration is on
-const maxOverlayMode = computed(() => (autoCalibration.value ? 2 : 1));
+const maxOverlayMode = computed(() => (autoCalibration.value ? 3 : 2));
 const overlayTicks = computed<Record<number, string>>(() => {
-  const ticks: Record<number, string> = { 0: "Corners", 1: "Off" };
-  if (autoCalibration.value) ticks[2] = "Exclusion";
+  const ticks: Record<number, string> = { 0: "Corners", 1: "Off", 2: "Coverage" };
+  if (autoCalibration.value) ticks[3] = "Exclusion";
   return ticks;
 });
 watch(autoCalibration, (enabled) => {
-  if (!enabled && overlayMode.value === 2) {
+  if (!enabled && overlayMode.value === 3) {
     overlayMode.value = 1;
     handleOverlayModeChange(1);
   }
 });
 const handleOverlayModeChange = (mode: number) => {
   useCameraSettingsStore().changeCurrentPipelineSetting(
-    { drawAllSnapshots: mode === 0, showExclusionZone: mode === 2 },
+    { drawAllSnapshots: mode === 0, showCoverage: mode === 2, showExclusionZone: mode === 3 },
     false
   );
 };
+const coveragePercent = computed(() => Math.round(useStateStore().calibrationData.coverage * 100));
 
 const bypassVal = computed<boolean>({
   get: () => useStateStore().bypassMinCalibrationImages,
@@ -614,7 +615,7 @@ const setSelectedVideoFormat = (format: VideoFormat) => {
             <v-col :cols="4" class="pl-0 pt-10px pb-10px d-flex align-center">
               <tooltipped-label
                 label="Calibration Overlay"
-                tooltip="What to draw on the calibration stream: collected corners, nothing, or the last snapshot centroid with the exclusion zone the next snapshot must be outside of"
+                tooltip="What to draw on the calibration stream: collected corners, nothing, the image regions no snapshot has covered yet (shaded orange), or the last snapshot centroid with the exclusion zone the next snapshot must be outside of"
               />
             </v-col>
             <v-col :cols="8" class="pl-0 pt-10px pb-10px">
@@ -721,6 +722,15 @@ const setSelectedVideoFormat = (format: VideoFormat) => {
           >
             Snapshots: {{ useStateStore().calibrationData.imageCount }} of at least
             {{ minCount }}
+          </v-chip>
+          <v-chip
+            class="ml-2"
+            :variant="theme.global.current.value.dark ? 'tonal' : 'elevated'"
+            label
+            :color="coveragePercent >= 90 ? 'buttonPassive' : 'light-grey'"
+            title="Share of the image (on an 8x6 grid) where at least one snapshot has board corners. Make sure to cover the edges and corners of the image; use the Coverage overlay to see the gaps."
+          >
+            Coverage: {{ coveragePercent }}%
           </v-chip>
           <v-spacer />
           <pv-switch

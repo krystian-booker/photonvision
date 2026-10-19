@@ -7,6 +7,7 @@ import type {
   CameraSettingsChangeRequest,
   Resolution,
   RobotOffsetType,
+  RobotToCameraTransform,
   VideoFormat
 } from "@/types/SettingTypes";
 import { PlaceholderCameraSettings } from "@/types/SettingTypes";
@@ -145,7 +146,8 @@ export const useCameraSettingsStore = defineStore("cameraSettings", {
           isEnabled: d.isEnabled,
           isConnected: d.isConnected,
           hasConnected: d.hasConnected,
-          mismatch: d.mismatch
+          mismatch: d.mismatch,
+          robotToCamera: d.robotToCamera ?? undefined
         };
         return acc;
       }, {});
@@ -359,6 +361,23 @@ export const useCameraSettingsStore = defineStore("cameraSettings", {
         this.currentCameraSettings.nickname = newName;
       }
       return axios.post("/settings/camera/setNickname", payload);
+    },
+    /**
+     * Set (or clear) the robot-to-camera transform of the provided camera.
+     *
+     * @param robotToCamera the transform to save (meters and degrees), or null to clear it.
+     * @param cameraUniqueName the unique name of the camera.
+     * @return HTTP request promise to the backend
+     */
+    setRobotToCamera(
+      robotToCamera: RobotToCameraTransform | null,
+      cameraUniqueName: string = useStateStore().currentCameraUniqueName
+    ) {
+      const payload = {
+        cameraUniqueName: cameraUniqueName,
+        robotToCamera: robotToCamera
+      };
+      return axios.post("/settings/camera/setRobotToCamera", payload);
     },
     /**
      * Start the 3D calibration process for the provided camera.

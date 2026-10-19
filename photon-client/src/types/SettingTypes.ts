@@ -230,6 +230,25 @@ export interface QuirkyCamera {
   quirks: Record<ValidQuirks, boolean>;
 }
 
+// A robot-to-camera transform. Translation is in meters, rotation is in degrees
+export interface RobotToCameraTransform {
+  x: number;
+  y: number;
+  z: number;
+  rollDeg: number;
+  pitchDeg: number;
+  yawDeg: number;
+}
+
+// The robot-to-camera transform stored in a camera's configuration
+export interface StoredRobotToCamera extends RobotToCameraTransform {
+  source: "manual" | "calibrated";
+  updatedAtMillis: number;
+  // 1-sigma uncertainties: [x m, y m, z m, roll deg, pitch deg, yaw deg]
+  stdDevs?: number[];
+  rmsReprojectionErrorPx: number;
+}
+
 export interface UiCameraConfiguration {
   cameraPath: string;
 
@@ -269,6 +288,9 @@ export interface UiCameraConfiguration {
   isConnected: boolean;
   hasConnected: boolean;
   mismatch: boolean;
+
+  // Undefined when the robot-to-camera transform is unknown
+  robotToCamera?: StoredRobotToCamera;
 }
 
 export interface CameraSettingsChangeRequest {
@@ -435,7 +457,8 @@ export const PlaceholderCameraSettings: UiCameraConfiguration = reactive({
   isEnabled: true,
   isConnected: true,
   hasConnected: true,
-  mismatch: false
+  mismatch: false,
+  robotToCamera: undefined
 });
 
 export enum CalibrationBoardTypes {

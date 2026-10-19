@@ -375,6 +375,7 @@ export interface Calibration3dPipelineSettings extends PipelineSettings {
   pipelineType: PipelineType.Calibration3d;
   drawAllSnapshots: boolean;
   showExclusionZone: boolean;
+  showCoverage: boolean;
   autoCalibrate: boolean;
 }
 export type ConfigurableCalibration3dPipelineSettings = Partial<Omit<Calibration3dPipelineSettings, "pipelineType">> &
@@ -389,6 +390,7 @@ export const DefaultCalibration3dPipelineSettings: Calibration3dPipelineSettings
   cameraExposureRaw: 6,
   drawAllSnapshots: false,
   showExclusionZone: false,
+  showCoverage: false,
   autoCalibrate: false
 };
 

@@ -9,6 +9,11 @@ import type {
   WebsocketNTUpdate,
   WebsocketPipelineResultUpdate
 } from "@/types/WebsocketDataTypes";
+import {
+  DefaultExtrinsicCalibrationStatus,
+  DefaultExtrinsicCaptureSettings,
+  type ExtrinsicCalibrationStatus
+} from "@/types/RobotCalibrationTypes";
 
 export interface NTConnectionStatus {
   connected: boolean;
@@ -43,6 +48,8 @@ interface StateStore {
     autoCalibrate: boolean;
     // Null when the backend reports no board visible during auto calibration
     movedFarEnough: boolean | null;
+    // Fraction (0-1) of the image covered by snapshot corners
+    coverage: number;
   };
 
   // UI-only flag to allow calibration with fewer than the recommended number of snapshots
@@ -58,6 +65,9 @@ interface StateStore {
   };
 
   vsmState: VsmState;
+
+  // Robot extrinsic calibration session state, pushed by the backend
+  extrinsicCalibration: ExtrinsicCalibrationStatus;
 }
 
 export const useStateStore = defineStore("state", {
@@ -95,7 +105,8 @@ export const useStateStore = defineStore("state", {
         imageCount: 0,
         videoFormatIndex: 0,
         autoCalibrate: false,
-        movedFarEnough: null
+        movedFarEnough: null,
+        coverage: 0
       },
 
       bypassMinCalibrationImages: false,
@@ -112,7 +123,9 @@ export const useStateStore = defineStore("state", {
       vsmState: {
         allConnectedCameras: [],
         disabledConfigs: []
-      }
+      },
+
+      extrinsicCalibration: { ...DefaultExtrinsicCalibrationStatus, settings: { ...DefaultExtrinsicCaptureSettings } }
     };
   },
   getters: {
@@ -170,11 +183,23 @@ export const useStateStore = defineStore("state", {
         imageCount: data.count,
         videoFormatIndex: data.videoModeIndex,
         autoCalibrate: data.autoCalibrate ?? false,
-        movedFarEnough: data.movedFarEnough ?? null
+        movedFarEnough: data.movedFarEnough ?? null,
+        coverage: data.coverage ?? 0
       };
     },
     updateDiscoveredCameras(data: VsmState) {
       this.vsmState = data;
+    },
+    updateExtrinsicCalibrationStatus(data: ExtrinsicCalibrationStatus) {
+      // Null fields are omitted by the backend, so fill in anything missing with defaults
+      this.extrinsicCalibration = {
+        ...DefaultExtrinsicCalibrationStatus,
+        ...data,
+        odometry: data.odometry ?? [],
+        cameras: data.cameras ?? [],
+        settings: { ...DefaultExtrinsicCaptureSettings, ...data.settings },
+        result: data.result ?? undefined
+      };
     },
     showSnackbarMessage(data: {
       message: string;

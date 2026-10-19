@@ -7,10 +7,12 @@ import type {
   NetworkSettings,
   PVCameraInfo,
   QuirkyCamera,
+  StoredRobotToCamera,
   VsmState
 } from "@/types/SettingTypes";
 import type { ActivePipelineSettings } from "@/types/PipelineTypes";
 import type { Field, PipelineResult } from "@/types/PhotonTrackingTypes";
+import type { ExtrinsicCalibrationStatus } from "@/types/RobotCalibrationTypes";
 
 export interface WebsocketLogMessage {
   logMessage: {
@@ -69,6 +71,8 @@ export interface WebsocketCameraSettingsUpdate {
   isConnected: boolean;
   hasConnected: boolean;
   mismatch: boolean;
+  // Omitted (or null) when the robot-to-camera transform is unknown
+  robotToCamera?: StoredRobotToCamera | null;
 }
 export interface WebsocketNTUpdate {
   connected: boolean;
@@ -91,6 +95,7 @@ export interface WebsocketCalibrationData {
   markerSizeMm: number;
   autoCalibrate?: boolean;
   movedFarEnough?: boolean | null;
+  coverage?: number;
 }
 
 export interface IncomingWebsocketData {
@@ -108,6 +113,7 @@ export interface IncomingWebsocketData {
   cameraUniqueName?: string; // Sent when mutating pipeline settings to check against currently active
   calibrationData?: WebsocketCalibrationData;
   visionSourceManager?: VsmState;
+  extrinsicCalibration?: ExtrinsicCalibrationStatus;
 }
 
 export enum WebsocketPipelineType {

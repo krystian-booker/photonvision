@@ -6,6 +6,7 @@ import GeneralSettingsView from "@/views/GeneralSettingsView.vue";
 import DocsView from "@/views/DocsView.vue";
 import NotFoundView from "@/views/NotFoundView.vue";
 import CameraMatchingView from "@/views/CameraMatchingView.vue";
+import RobotCalibrationView from "@/views/RobotCalibrationView.vue";
 
 const router = createRouter({
   // Using HTML5 History Mode is problematic with Javalin because each route is treated as a server endpoint which causes Javalin to return a 404 error before being redirected to the UI.
@@ -35,6 +36,11 @@ const router = createRouter({
       path: "/cameraConfigs",
       name: "Camera Matching",
       component: CameraMatchingView
+    },
+    {
+      path: "/robotCalibration",
+      name: "Robot Calibration",
+      component: RobotCalibrationView
     },
     {
       path: "/docs",
