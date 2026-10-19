@@ -21,6 +21,7 @@ import ntcore
 import wpilib
 import wpiutil
 from wpilib import RobotController, Timer
+from wpimath import Quaternion, Rotation3d, Transform3d, Translation3d
 
 # magical import to make serde stuff work
 import photonlibpy.generated  # noqa
@@ -100,6 +101,9 @@ class PhotonCamera:
         self._heartbeatEntry = self._cameraTable.get_integer_topic(
             "heartbeat"
         ).subscribe(-1)
+        self._robotToCameraSubscriber = self._cameraTable.get_double_array_topic(
+            "robotToCamera"
+        ).subscribe([])
 
         self._ledModeRequest = photonvision_root_table.get_integer_topic(
             "ledModeRequest"
@@ -288,6 +292,22 @@ class PhotonCamera:
         :returns: The name of the camera.
         """
         return self._name
+
+    def getRobotToCamera(self) -> Transform3d | None:
+        """Returns the transform from the robot origin to this camera as stored on the coprocessor,
+        either measured by PhotonVision's robot extrinsic calibration or entered in the PhotonVision
+        UI. The camera frame follows the usual convention (X out of the lens, Y left, Z up), so this
+        can be passed straight to PhotonPoseEstimator.
+
+        :returns: The robot-to-camera transform, or None if the coprocessor has none for this camera.
+        """
+        data = self._robotToCameraSubscriber.get()
+        if len(data) != 7:
+            return None
+        return Transform3d(
+            Translation3d(data[0], data[1], data[2]),
+            Rotation3d(Quaternion(data[3], data[4], data[5], data[6])),
+        )
 
     def isConnected(self) -> bool:
         """Returns whether the camera is connected and actively returning new data. Connection status is

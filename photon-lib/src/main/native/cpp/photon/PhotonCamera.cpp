@@ -106,6 +106,8 @@ PhotonCamera::PhotonCamera(wpi::nt::NetworkTableInstance instance,
           rootTable->GetDoubleArrayTopic("cameraIntrinsics").Subscribe({})),
       cameraDistortionSubscriber(
           rootTable->GetDoubleArrayTopic("cameraDistortion").Subscribe({})),
+      robotToCameraSubscriber(
+          rootTable->GetDoubleArrayTopic("robotToCamera").Subscribe({})),
       driverModeSubscriber(
           rootTable->GetBooleanTopic("driverMode").Subscribe(false)),
       driverModePublisher(
@@ -323,6 +325,19 @@ std::optional<PhotonCamera::DistortionMatrix> PhotonCamera::GetDistCoeffs() {
     retVal.block(0, 0, bound, 1) = map;
 
     return retVal;
+  }
+  return std::nullopt;
+}
+
+std::optional<wpi::math::Transform3d> PhotonCamera::GetRobotToCamera() {
+  auto data = robotToCameraSubscriber.Get();
+  if (data.size() == 7) {
+    return wpi::math::Transform3d{
+        wpi::math::Translation3d{wpi::units::meter_t{data[0]},
+                                 wpi::units::meter_t{data[1]},
+                                 wpi::units::meter_t{data[2]}},
+        wpi::math::Rotation3d{
+            wpi::math::Quaternion{data[3], data[4], data[5], data[6]}}};
   }
   return std::nullopt;
 }

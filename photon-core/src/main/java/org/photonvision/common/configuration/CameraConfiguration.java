@@ -21,11 +21,13 @@ import io.avaje.jsonb.Json;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import org.jetbrains.annotations.Nullable;
 import org.opencv.core.Size;
 import org.photonvision.common.dataflow.websocket.UICameraConfiguration;
 import org.photonvision.common.logging.LogGroup;
 import org.photonvision.common.logging.Logger;
 import org.photonvision.vision.calibration.CameraCalibrationCoefficients;
+import org.photonvision.vision.calibration.extrinsic.RobotToCamera;
 import org.photonvision.vision.camera.CameraType;
 import org.photonvision.vision.camera.PVCameraInfo;
 import org.photonvision.vision.camera.QuirkyCamera;
@@ -63,6 +65,12 @@ public class CameraConfiguration {
     public List<CVPipelineSettings> pipelineSettings = new ArrayList<>();
 
     public DriverModePipelineSettings driveModeSettings = new DriverModePipelineSettings();
+
+    /**
+     * Transform from the robot origin to this camera, either entered by the user or measured by robot
+     * extrinsic calibration. Null if unknown.
+     */
+    @Nullable public RobotToCamera robotToCamera = null;
 
     public CameraConfiguration(PVCameraInfo cameraInfo, String uniqueName, String nickname) {
         this.matchedCameraInfo = cameraInfo;
@@ -245,6 +253,7 @@ public class CameraConfiguration {
         ret.cameraQuirks = cameraQuirks;
         ret.calibrations =
                 calibrations.stream().map(CameraCalibrationCoefficients::cloneWithoutObservations).toList();
+        ret.robotToCamera = robotToCamera;
 
         return ret;
     }

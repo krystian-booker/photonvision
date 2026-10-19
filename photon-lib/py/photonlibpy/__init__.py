@@ -26,10 +26,12 @@ from .estimated_robot_pose import EstimatedRobotPose
 from .packet import Packet
 from .photon_camera import PhotonCamera
 from .photon_pose_estimator import PhotonPoseEstimator
+from .robot_calibration_publisher import RobotCalibrationPublisher
 
 __all__ = (
     "EstimatedRobotPose",
     "Packet",
     "PhotonCamera",
     "PhotonPoseEstimator",
+    "RobotCalibrationPublisher",
 )

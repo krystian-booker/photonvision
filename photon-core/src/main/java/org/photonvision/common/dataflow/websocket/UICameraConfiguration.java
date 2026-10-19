@@ -22,6 +22,7 @@ import java.util.List;
 import java.util.Map;
 import org.photonvision.common.configuration.CameraConfiguration;
 import org.photonvision.vision.calibration.UICameraCalibrationCoefficients;
+import org.photonvision.vision.calibration.extrinsic.RobotToCamera;
 import org.photonvision.vision.camera.PVCameraInfo;
 import org.photonvision.vision.camera.QuirkyCamera;
 
@@ -46,6 +47,7 @@ public class UICameraConfiguration {
     public int outputStreamPort;
     public int inputStreamPort;
     public List<UICameraCalibrationCoefficients> calibrations;
+    public RobotToCamera robotToCamera;
     public boolean isFovConfigurable = true;
     public QuirkyCamera cameraQuirks;
     public boolean isCSICamera;

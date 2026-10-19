@@ -81,6 +81,9 @@ public class NTTopicSet {
     public DoubleArrayPublisher cameraIntrinsicsPublisher;
     public DoubleArrayPublisher cameraDistortionPublisher;
 
+    // Robot-to-camera transform as [x, y, z, qw, qx, qy, qz], or empty if unknown
+    public DoubleArrayPublisher robotToCameraPublisher;
+
     public void updateEntries() {
         var rawBytesEntry =
                 subTable
@@ -135,6 +138,7 @@ public class NTTopicSet {
 
         cameraIntrinsicsPublisher = subTable.getDoubleArrayTopic("cameraIntrinsics").publish();
         cameraDistortionPublisher = subTable.getDoubleArrayTopic("cameraDistortion").publish();
+        robotToCameraPublisher = subTable.getDoubleArrayTopic("robotToCamera").publish();
     }
 
     @SuppressWarnings("DuplicatedCode")
@@ -167,5 +171,6 @@ public class NTTopicSet {
 
         if (cameraIntrinsicsPublisher != null) cameraIntrinsicsPublisher.close();
         if (cameraDistortionPublisher != null) cameraDistortionPublisher.close();
+        if (robotToCameraPublisher != null) robotToCameraPublisher.close();
     }
 }

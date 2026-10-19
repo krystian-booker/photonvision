@@ -28,6 +28,7 @@
 #include <string>
 #include <vector>
 
+#include <wpi/math/geometry/Transform3d.hpp>
 #include <wpi/nt/BooleanTopic.hpp>
 #include <wpi/nt/DoubleArrayTopic.hpp>
 #include <wpi/nt/DoubleTopic.hpp>
@@ -216,6 +217,18 @@ class PhotonCamera {
   std::optional<DistortionMatrix> GetDistCoeffs();
 
   /**
+   * Returns the transform from the robot origin to this camera as stored on
+   * the coprocessor, either measured by PhotonVision's robot extrinsic
+   * calibration or entered in the PhotonVision UI. The camera frame follows the
+   * usual convention (X out of the lens, Y left, Z up), so this can be passed
+   * straight to PhotonPoseEstimator.
+   *
+   * @return The robot-to-camera transform, if the coprocessor has one for this
+   * camera. Empty otherwise.
+   */
+  std::optional<wpi::math::Transform3d> GetRobotToCamera();
+
+  /**
    * Sets whether or not coprocessor version checks will occur. Setting this to
    * true will silence all console warnings about coproccessor connection, so be
    * careful when enabling this and ensure all your coprocessors are
@@ -249,6 +262,7 @@ class PhotonCamera {
 
   wpi::nt::DoubleArraySubscriber cameraIntrinsicsSubscriber;
   wpi::nt::DoubleArraySubscriber cameraDistortionSubscriber;
+  wpi::nt::DoubleArraySubscriber robotToCameraSubscriber;
 
   wpi::nt::BooleanSubscriber driverModeSubscriber;
   wpi::nt::BooleanPublisher driverModePublisher;

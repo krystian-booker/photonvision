@@ -128,6 +128,7 @@ public class Server {
         app.get("/api/settings/camera/getCalibImages", RequestHandler::onCameraCalibImagesRequest);
         app.get("/api/settings/camera/getCalibration", RequestHandler::onCalibrationJsonRequest);
         app.get("/api/settings/camera/getUncertainty", RequestHandler::onUncertaintyJsonRequest);
+        app.post("/api/settings/camera/setRobotToCamera", RequestHandler::onSetRobotToCameraRequest);
 
         // Utilities
         app.post("/api/utils/offlineUpdate", RequestHandler::onOfflineUpdateRequest);
@@ -149,6 +150,18 @@ public class Server {
         app.post("/api/calibration/cancel", RequestHandler::onCalibrationCancelRequest);
         app.post("/api/calibration/importFromData", RequestHandler::onDataCalibrationImportRequest);
         app.post("/api/calibration/remove", RequestHandler::onCalibrationRemoveRequest);
+
+        // Robot extrinsic calibration
+        app.get("/api/extrinsics/status", RequestHandler::onExtrinsicStatusRequest);
+        app.post("/api/extrinsics/start", RequestHandler::onExtrinsicStartRequest);
+        app.post("/api/extrinsics/stop", RequestHandler::onExtrinsicStopRequest);
+        app.post("/api/extrinsics/reset", RequestHandler::onExtrinsicResetRequest);
+        app.post("/api/extrinsics/captureNow", RequestHandler::onExtrinsicCaptureNowRequest);
+        app.post("/api/extrinsics/removeStop", RequestHandler::onExtrinsicRemoveStopRequest);
+        app.post("/api/extrinsics/solve", RequestHandler::onExtrinsicSolveRequest);
+        app.post("/api/extrinsics/commit", RequestHandler::onExtrinsicCommitRequest);
+        app.get("/api/extrinsics/dataset", RequestHandler::onExtrinsicDatasetExportRequest);
+        app.post("/api/extrinsics/dataset", RequestHandler::onExtrinsicDatasetImportRequest);
 
         // Object detection
         app.post("/api/objectdetection/import", RequestHandler::onImportObjectDetectionModelRequest);

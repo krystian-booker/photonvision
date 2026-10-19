@@ -147,10 +147,6 @@ class SyntheticRobotData {
             cams.add(new ExtrinsicDataset.CameraInfo(name, name, WIDTH, HEIGHT, K.clone(), DIST.clone()));
         }
 
-        Matrix<N3, N3> cameraMatrix = new Matrix<>(new SimpleMatrix(3, 3, true, K));
-        Matrix<N8, N1> distCoeffs = new Matrix<>(new SimpleMatrix(8, 1, true, DIST));
-        var model = new TargetModel(TAG_SIZE, TAG_SIZE);
-
         List<ExtrinsicDataset.Stop> stops = new ArrayList<>();
         Pose2d odom = new Pose2d(1.3, -2.1, Rotation2d.fromDegrees(40));
         for (int k = 0; k < robotPoses.size(); k++) {
@@ -167,36 +163,45 @@ class SyntheticRobotData {
                 odom = odom.plus(noisy);
             }
 
-            Pose3d robot3d = new Pose3d(truth);
             List<ExtrinsicDataset.TagObservation> obs = new ArrayList<>();
-            for (var camEntry : trueRobotToCamera.entrySet()) {
-                Pose3d camPose = robot3d.transformBy(camEntry.getValue());
-                var camRt = RotTrlTransform3d.makeRelativeTo(camPose);
-                for (var tagEntry : trueTags.entrySet()) {
-                    Pose3d tagPose = tagEntry.getValue();
-                    if (!isVisible(camPose, tagPose)) continue;
-                    var pts =
-                            OpenCVHelp.projectPoints(
-                                    cameraMatrix, distCoeffs, camRt, model.getFieldVertices(tagPose));
-                    double[] corners = new double[8];
-                    boolean inFrame = true;
-                    for (int i = 0; i < 4; i++) {
-                        corners[2 * i] = pts[i].x + random.nextGaussian() * pixelNoise;
-                        corners[2 * i + 1] = pts[i].y + random.nextGaussian() * pixelNoise;
-                        if (pts[i].x < 5 || pts[i].x > WIDTH - 5 || pts[i].y < 5 || pts[i].y > HEIGHT - 5)
-                            inFrame = false;
-                    }
-                    if (inFrame)
-                        obs.add(
-                                new ExtrinsicDataset.TagObservation(
-                                        camEntry.getKey(), tagEntry.getKey(), corners, 5));
-                }
+            for (var camName : trueRobotToCamera.keySet()) {
+                observe(truth, camName)
+                        .forEach(
+                                (id, corners) ->
+                                        obs.add(new ExtrinsicDataset.TagObservation(camName, id, corners, 5)));
             }
             stops.add(
                     new ExtrinsicDataset.Stop(
                             k * 2.0, odom.getX(), odom.getY(), odom.getRotation().getRadians(), obs));
         }
         return new ExtrinsicDataset(ExtrinsicDataset.CURRENT_VERSION, TAG_SIZE, cams, stops);
+    }
+
+    /** Noisy corners of every tag the given camera sees with the robot at {@code truth}. */
+    Map<Integer, double[]> observe(Pose2d truth, String camName) {
+        Matrix<N3, N3> cameraMatrix = new Matrix<>(new SimpleMatrix(3, 3, true, K));
+        Matrix<N8, N1> distCoeffs = new Matrix<>(new SimpleMatrix(8, 1, true, DIST));
+        var model = new TargetModel(TAG_SIZE, TAG_SIZE);
+        Map<Integer, double[]> out = new LinkedHashMap<>();
+        Pose3d camPose = new Pose3d(truth).transformBy(trueRobotToCamera.get(camName));
+        var camRt = RotTrlTransform3d.makeRelativeTo(camPose);
+        for (var tagEntry : trueTags.entrySet()) {
+            Pose3d tagPose = tagEntry.getValue();
+            if (!isVisible(camPose, tagPose)) continue;
+            var pts =
+                    OpenCVHelp.projectPoints(
+                            cameraMatrix, distCoeffs, camRt, model.getFieldVertices(tagPose));
+            double[] corners = new double[8];
+            boolean inFrame = true;
+            for (int i = 0; i < 4; i++) {
+                corners[2 * i] = pts[i].x + random.nextGaussian() * pixelNoise;
+                corners[2 * i + 1] = pts[i].y + random.nextGaussian() * pixelNoise;
+                if (pts[i].x < 5 || pts[i].x > WIDTH - 5 || pts[i].y < 5 || pts[i].y > HEIGHT - 5)
+                    inFrame = false;
+            }
+            if (inFrame) out.put(tagEntry.getKey(), corners);
+        }
+        return out;
     }
 
     private static boolean isVisible(Pose3d camPose, Pose3d tagPose) {

@@ -34,6 +34,10 @@ import org.photonvision.common.networktables.PacketSubscriber;
 import org.photonvision.targeting.PhotonPipelineResult;
 import org.photonvision.timesync.TimeSyncSingleton;
 import org.wpilib.driverstation.DriverStationErrors;
+import org.wpilib.math.geometry.Quaternion;
+import org.wpilib.math.geometry.Rotation3d;
+import org.wpilib.math.geometry.Transform3d;
+import org.wpilib.math.geometry.Translation3d;
 import org.wpilib.math.linalg.MatBuilder;
 import org.wpilib.math.linalg.Matrix;
 import org.wpilib.math.numbers.*;
@@ -74,6 +78,7 @@ public class PhotonCamera implements AutoCloseable {
     IntegerSubscriber heartbeatSubscriber;
     DoubleArraySubscriber cameraIntrinsicsSubscriber;
     DoubleArraySubscriber cameraDistortionSubscriber;
+    DoubleArraySubscriber robotToCameraSubscriber;
     MultiSubscriber topicNameSubscriber;
     NetworkTable rootPhotonTable;
 
@@ -96,6 +101,7 @@ public class PhotonCamera implements AutoCloseable {
         pipelineIndexRequest.close();
         cameraIntrinsicsSubscriber.close();
         cameraDistortionSubscriber.close();
+        robotToCameraSubscriber.close();
         topicNameSubscriber.close();
     }
 
@@ -174,6 +180,7 @@ public class PhotonCamera implements AutoCloseable {
                 cameraTable.getDoubleArrayTopic("cameraIntrinsics").subscribe(null);
         cameraDistortionSubscriber =
                 cameraTable.getDoubleArrayTopic("cameraDistortion").subscribe(null);
+        robotToCameraSubscriber = cameraTable.getDoubleArrayTopic("robotToCamera").subscribe(null);
 
         ledModeRequest = rootPhotonTable.getIntegerTopic("ledModeRequest").publish();
         ledModeState = rootPhotonTable.getIntegerTopic("ledModeState").subscribe(-1);
@@ -511,6 +518,25 @@ public class PhotonCamera implements AutoCloseable {
             System.arraycopy(distCoeffs, 0, data, 0, distCoeffs.length);
 
             return Optional.of(MatBuilder.fill(Nat.N8(), Nat.N1(), data));
+        } else return Optional.empty();
+    }
+
+    /**
+     * Returns the transform from the robot origin to this camera as stored on the coprocessor, either
+     * measured by PhotonVision's robot extrinsic calibration or entered in the PhotonVision UI. The
+     * camera frame follows the usual convention (X out of the lens, Y left, Z up), so this can be
+     * passed straight to {@link PhotonPoseEstimator}.
+     *
+     * @return The robot-to-camera transform, if the coprocessor has one for this camera. Empty
+     *     otherwise.
+     */
+    public Optional<Transform3d> getRobotToCamera() {
+        var data = robotToCameraSubscriber.get();
+        if (data != null && data.length == 7) {
+            return Optional.of(
+                    new Transform3d(
+                            new Translation3d(data[0], data[1], data[2]),
+                            new Rotation3d(new Quaternion(data[3], data[4], data[5], data[6]))));
         } else return Optional.empty();
     }
 

@@ -30,10 +30,12 @@ import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedList;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import javax.imageio.ImageIO;
 import org.apache.commons.io.FileUtils;
+import org.jetbrains.annotations.Nullable;
 import org.opencv.core.MatOfByte;
 import org.opencv.core.MatOfInt;
 import org.opencv.core.Point3;
@@ -59,6 +61,10 @@ import org.photonvision.common.util.TimedTaskManager;
 import org.photonvision.common.util.file.ProgramDirectoryUtilities;
 import org.photonvision.tflite.TFLiteJNI.TFLiteSource;
 import org.photonvision.vision.calibration.CameraCalibrationCoefficients;
+import org.photonvision.vision.calibration.extrinsic.ExtrinsicCalibrationManager;
+import org.photonvision.vision.calibration.extrinsic.ExtrinsicDataset;
+import org.photonvision.vision.calibration.extrinsic.ExtrinsicSolverSettings;
+import org.photonvision.vision.calibration.extrinsic.RobotToCamera;
 import org.photonvision.vision.camera.CameraQuirk;
 import org.photonvision.vision.camera.PVCameraInfo;
 import org.photonvision.vision.objects.ObjectDetector;
@@ -1174,6 +1180,40 @@ public class RequestHandler {
     }
 
     @Json
+    record RobotToCameraRequest(
+            String cameraUniqueName, @Nullable RobotToCameraValues robotToCamera) {}
+
+    @Json
+    record RobotToCameraValues(
+            double x, double y, double z, double rollDeg, double pitchDeg, double yawDeg) {}
+
+    /**
+     * Manually set (or clear, by sending a null robotToCamera) a camera's robot-to-camera transform.
+     */
+    public static void onSetRobotToCameraRequest(Context ctx) {
+        try {
+            var request = ctx.bodyAsClass(RobotToCameraRequest.class);
+            var module = VisionSourceManager.getInstance().vmm.getModule(request.cameraUniqueName());
+            if (module == null) {
+                ctx.status(404).result("No camera named " + request.cameraUniqueName());
+                return;
+            }
+            var v = request.robotToCamera();
+            module.setRobotToCamera(
+                    v == null
+                            ? null
+                            : RobotToCamera.manual(v.x(), v.y(), v.z(), v.rollDeg(), v.pitchDeg(), v.yawDeg()));
+            ctx.status(200).result("Robot to camera transform updated");
+        } catch (IllegalArgumentException | IllegalStateException | JsonException e) {
+            ctx.status(400).result("Invalid robot to camera transform: " + e.getMessage());
+            logger.error("Failed to process robot to camera request", e);
+        } catch (Exception e) {
+            ctx.status(500).result("Failed to set robot to camera transform");
+            logger.error("Unexpected error while setting robot to camera transform", e);
+        }
+    }
+
+    @Json
     record CalibrationRemoveRequest(int width, int height, String cameraUniqueName) {}
 
     public static void onCalibrationRemoveRequest(Context ctx) {
@@ -1515,6 +1555,135 @@ public class RequestHandler {
             logger.error("Failed to process unassign camera request", e);
             ctx.result("Failed to process unassign camera request");
             return;
+        }
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // Robot extrinsic calibration
+    // ---------------------------------------------------------------------------------------------
+
+    public static void onExtrinsicStatusRequest(Context ctx) {
+        ctx.json(ExtrinsicCalibrationManager.getInstance().getStatus());
+    }
+
+    public static void onExtrinsicStartRequest(Context ctx) {
+        try {
+            var settings = ctx.bodyAsClass(ExtrinsicCalibrationManager.CaptureSettings.class);
+            for (var name : settings.cameras()) {
+                if (VisionSourceManager.getInstance().vmm.getModule(name) == null) {
+                    ctx.status(404).result("No camera named " + name);
+                    return;
+                }
+            }
+            ExtrinsicCalibrationManager.getInstance().start(settings);
+            ctx.status(200).result("Robot calibration capture started");
+        } catch (IllegalArgumentException | IllegalStateException | JsonException e) {
+            ctx.status(400).result(e.getMessage());
+        } catch (Exception e) {
+            ctx.status(500).result("Failed to start robot calibration");
+            logger.error("Failed to start robot calibration", e);
+        }
+    }
+
+    public static void onExtrinsicStopRequest(Context ctx) {
+        ExtrinsicCalibrationManager.getInstance().stop();
+        ctx.status(200).result("Robot calibration capture paused");
+    }
+
+    public static void onExtrinsicResetRequest(Context ctx) {
+        ExtrinsicCalibrationManager.getInstance().reset();
+        ctx.status(200).result("Robot calibration session reset");
+    }
+
+    public static void onExtrinsicCaptureNowRequest(Context ctx) {
+        try {
+            ExtrinsicCalibrationManager.getInstance().captureNow();
+            ctx.status(200).result("Will record a stop once the robot is still");
+        } catch (IllegalStateException e) {
+            ctx.status(400).result(e.getMessage());
+        }
+    }
+
+    @Json
+    record ExtrinsicRemoveStopRequest(int index) {}
+
+    public static void onExtrinsicRemoveStopRequest(Context ctx) {
+        try {
+            var request = ctx.bodyAsClass(ExtrinsicRemoveStopRequest.class);
+            ExtrinsicCalibrationManager.getInstance().removeStop(request.index());
+            ctx.status(200).result("Removed stop " + request.index());
+        } catch (IllegalArgumentException | IllegalStateException | JsonException e) {
+            ctx.status(400).result(e.getMessage());
+        }
+    }
+
+    public static void onExtrinsicSolveRequest(Context ctx) {
+        try {
+            var settings = ctx.bodyAsClass(ExtrinsicSolverSettings.class);
+            var field = ConfigProvider.getInstance().getConfig().getFieldLayout();
+            var result =
+                    ExtrinsicCalibrationManager.getInstance()
+                            .solve(settings, id -> field == null ? Optional.empty() : field.getTagPose(id));
+            ctx.status(result.success() ? 200 : 422);
+            ctx.json(result);
+        } catch (IllegalArgumentException | IllegalStateException | JsonException e) {
+            ctx.status(400).result(e.getMessage());
+        } catch (Exception e) {
+            ctx.status(500).result("Robot calibration solve failed: " + e.getMessage());
+            logger.error("Robot calibration solve failed", e);
+        }
+    }
+
+    @Json
+    record ExtrinsicCommitRequest(@Nullable List<String> cameras) {}
+
+    /** Save the last solve's robot-to-camera transforms (optionally only some cameras). */
+    public static void onExtrinsicCommitRequest(Context ctx) {
+        try {
+            var request = ctx.bodyAsClass(ExtrinsicCommitRequest.class);
+            var result = ExtrinsicCalibrationManager.getInstance().getLastResult();
+            if (result == null || !result.success()) {
+                ctx.status(400).result("There is no successful robot calibration to save");
+                return;
+            }
+            int saved = 0;
+            for (var cam : result.cameras()) {
+                if (request.cameras() != null && !request.cameras().contains(cam.uniqueName())) continue;
+                var module = VisionSourceManager.getInstance().vmm.getModule(cam.uniqueName());
+                if (module == null) {
+                    logger.warn("Camera " + cam.uniqueName() + " is gone; not saving its extrinsics");
+                    continue;
+                }
+                module.setRobotToCamera(RobotToCamera.fromCalibration(cam));
+                saved++;
+            }
+            ctx.status(200).result("Saved robot to camera transforms for " + saved + " camera(s)");
+        } catch (IllegalArgumentException | IllegalStateException | JsonException e) {
+            ctx.status(400).result(e.getMessage());
+        } catch (Exception e) {
+            ctx.status(500).result("Failed to save robot calibration");
+            logger.error("Failed to save robot calibration", e);
+        }
+    }
+
+    public static void onExtrinsicDatasetExportRequest(Context ctx) {
+        var dataset = ExtrinsicCalibrationManager.getInstance().getDataset();
+        ctx.contentType("application/json");
+        ctx.header("Content-Disposition", "attachment; filename=\"robot_calibration_dataset.json\"");
+        ctx.json(dataset);
+        ctx.status(200);
+    }
+
+    public static void onExtrinsicDatasetImportRequest(Context ctx) {
+        try {
+            var dataset = ctx.bodyAsClass(ExtrinsicDataset.class);
+            ExtrinsicCalibrationManager.getInstance().loadDataset(dataset);
+            ctx.status(200).result("Imported dataset with " + dataset.stops().size() + " stops");
+        } catch (IllegalArgumentException | IllegalStateException | JsonException e) {
+            ctx.status(400).result("Invalid dataset: " + e.getMessage());
+        } catch (Exception e) {
+            ctx.status(500).result("Failed to import dataset");
+            logger.error("Failed to import robot calibration dataset", e);
         }
     }
 }

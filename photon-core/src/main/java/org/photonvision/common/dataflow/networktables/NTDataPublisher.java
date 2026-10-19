@@ -27,6 +27,7 @@ import org.photonvision.common.logging.LogGroup;
 import org.photonvision.common.logging.Logger;
 import org.photonvision.common.networktables.NTTopicSet;
 import org.photonvision.targeting.PhotonPipelineResult;
+import org.photonvision.vision.calibration.extrinsic.RobotToCamera;
 import org.photonvision.vision.pipeline.result.CVPipelineResult;
 import org.photonvision.vision.pipeline.result.CalibrationPipelineResult;
 import org.photonvision.vision.target.TrackedTarget;
@@ -58,6 +59,8 @@ public class NTDataPublisher implements CVPipelineResultConsumer {
     private final Consumer<Boolean> isEnabledConsumer;
     private final BooleanSupplier enabledSupplier;
 
+    private final Supplier<RobotToCamera> robotToCameraSupplier;
+
     public NTDataPublisher(
             String cameraNickname,
             Supplier<Integer> pipelineIndexSupplier,
@@ -67,7 +70,8 @@ public class NTDataPublisher implements CVPipelineResultConsumer {
             Supplier<Integer> fpsLimitSupplier,
             Consumer<Integer> fpsLimitConsumer,
             BooleanSupplier enabledSupplier,
-            Consumer<Boolean> isEnabledConsumer) {
+            Consumer<Boolean> isEnabledConsumer,
+            Supplier<RobotToCamera> robotToCameraSupplier) {
         this.pipelineIndexSupplier = pipelineIndexSupplier;
         this.pipelineIndexConsumer = pipelineIndexConsumer;
         this.driverModeSupplier = driverModeSupplier;
@@ -76,6 +80,7 @@ public class NTDataPublisher implements CVPipelineResultConsumer {
         this.fpsLimitConsumer = fpsLimitConsumer;
         this.enabledSupplier = enabledSupplier;
         this.isEnabledConsumer = isEnabledConsumer;
+        this.robotToCameraSupplier = robotToCameraSupplier;
 
         updateCameraNickname(cameraNickname);
         updateEntries();
@@ -258,6 +263,12 @@ public class NTDataPublisher implements CVPipelineResultConsumer {
             ts.cameraIntrinsicsPublisher.accept(new double[0]);
             ts.cameraDistortionPublisher.accept(new double[0]);
         }
+
+        var robotToCamera = robotToCameraSupplier.get();
+        ts.robotToCameraPublisher.accept(
+                robotToCamera != null && robotToCamera.isValid()
+                        ? robotToCamera.toNtArray()
+                        : new double[0]);
 
         ts.heartbeatPublisher.set(acceptedResult.sequenceID);
 

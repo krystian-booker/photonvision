@@ -47,6 +47,8 @@ import org.photonvision.common.logging.Logger;
 import org.photonvision.common.util.SerializationUtils;
 import org.photonvision.common.util.file.FileUtils;
 import org.photonvision.vision.calibration.CameraCalibrationCoefficients;
+import org.photonvision.vision.calibration.extrinsic.ExtrinsicCalibrationManager;
+import org.photonvision.vision.calibration.extrinsic.RobotToCamera;
 import org.photonvision.vision.camera.CameraQuirk;
 import org.photonvision.vision.camera.CameraType;
 import org.photonvision.vision.camera.QuirkyCamera;
@@ -170,7 +172,8 @@ public class VisionModule implements AutoCloseable {
                         this::getFPSLimit,
                         this::setFPSLimit,
                         this::getEnabled,
-                        this::setEnabled);
+                        this::setEnabled,
+                        () -> visionSource.getSettables().getConfiguration().robotToCamera);
         uiDataConsumer = new UIDataPublisher(visionSource.getSettables().getConfiguration().uniqueName);
         statusLEDsConsumer =
                 new StatusLEDConsumer(visionSource.getSettables().getConfiguration().uniqueName);
@@ -180,6 +183,10 @@ public class VisionModule implements AutoCloseable {
         resultConsumers.add(
                 (result) ->
                         lastPipelineResultBestTarget = result.hasTargets() ? result.targets.get(0) : null);
+        resultConsumers.add(
+                (result) ->
+                        ExtrinsicCalibrationManager.getInstance()
+                                .onPipelineResult(getUniqueName(), getNickname(), result));
         resultConsumers.addAll(extraConsumers);
 
         // Sync VisionModule state with the first pipeline index
@@ -727,6 +734,7 @@ public class VisionModule implements AutoCloseable {
                 visionSource.getSettables().getConfiguration().calibrations.stream()
                         .map(CameraCalibrationCoefficients::cloneWithoutObservations)
                         .toList();
+        ret.robotToCamera = config.robotToCamera;
 
         ret.isFovConfigurable =
                 !(ConfigProvider.getInstance().getConfig().getHardwareConfig().hasPresetFOV());
@@ -836,6 +844,31 @@ public class VisionModule implements AutoCloseable {
         }
 
         saveAndBroadcastAll();
+    }
+
+    /**
+     * Set (or clear, with null) the transform from the robot origin to this camera. Saved to the
+     * config and published to NetworkTables with the next result.
+     */
+    public void setRobotToCamera(RobotToCamera robotToCamera) {
+        if (robotToCamera != null && !robotToCamera.isValid()) {
+            throw new IllegalArgumentException("Robot to camera transform must be finite");
+        }
+        visionSource.getSettables().getConfiguration().robotToCamera = robotToCamera;
+        logger.info("Robot to camera set to " + robotToCamera);
+        saveAndBroadcastAll();
+    }
+
+    public RobotToCamera getRobotToCamera() {
+        return visionSource.getSettables().getConfiguration().robotToCamera;
+    }
+
+    public String getUniqueName() {
+        return visionSource.getSettables().getConfiguration().uniqueName;
+    }
+
+    public String getNickname() {
+        return visionSource.getSettables().getConfiguration().nickname;
     }
 
     public void removeCalibrationFromConfig(Size resolution) {
