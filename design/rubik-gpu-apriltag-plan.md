@@ -302,6 +302,7 @@ Built and pushed on this branch; not yet run on a Rubik Pi 3.
 
 - **Matches the CPU detector:** on PhotonVision's test images, the GPU path finds exactly the same tag36h11 IDs as WPILib's CPU detector at decimation 1 (314 tags) and 2 (311 tags). Mean corner difference is 0.16 px; the remaining gap comes from AprilTag 3.4.5's bilinear edge refinement versus WPILib's older nearest-pixel version.
 - **Builds for the board's architecture:** cross-compiles for `linuxarm64` with WPILib's toolchain. The resulting library has no link-time Vulkan dependency.
+- **Full test suite passes:** photon-core 203 tests, photon-lib 74, photon-targeting 32, with 0 failures (2 pre-existing skips).
 
 ### Deviations from the plan
 
