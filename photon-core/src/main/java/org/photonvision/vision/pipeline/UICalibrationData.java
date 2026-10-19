@@ -37,6 +37,9 @@ public class UICalibrationData {
     // snapshot and the user should hold still
     public Boolean movedFarEnough = null;
 
+    // Fraction (0-1) of the image's coverage grid cells that contain at least one snapshot corner
+    public double coverage = 0;
+
     public UICalibrationData() {}
 
     public UICalibrationData(

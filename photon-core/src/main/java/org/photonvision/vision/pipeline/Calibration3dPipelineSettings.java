@@ -35,6 +35,8 @@ public class Calibration3dPipelineSettings extends AdvancedPipelineSettings {
     public boolean autoCalibrate = false;
     public boolean drawAllSnapshots;
     public boolean showExclusionZone = false;
+    // Shade the parts of the image that no snapshot has covered yet
+    public boolean showCoverage = false;
 
     public Calibration3dPipelineSettings() {
         super();

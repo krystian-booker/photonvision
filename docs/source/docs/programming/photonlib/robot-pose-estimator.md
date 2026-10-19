@@ -31,6 +31,10 @@ The API documentation can be found in here: [Java](https://github.wpilib.org/all
 
 Another necessary argument for creating a `PhotonPoseEstimator` is the `Transform3d` representing the robot-relative location and orientation of the camera. A `Transform3d` contains a `Translation3d` and a `Rotation3d`. The `Translation3d` is created in meters and the `Rotation3d` is created with radians. For more information on the coordinate system, please see the {ref}`Coordinate Systems <docs/apriltag-pipelines/coordinate-systems:Coordinate Systems>` documentation.
 
+:::{tip}
+Instead of measuring this from CAD, PhotonVision can measure it for every camera by driving the robot around a few AprilTags. The result is available in robot code via `PhotonCamera.getRobotToCamera()`. See {ref}`Calibrating Camera Mounting <docs/calibration/robot-extrinsics:Calibrating Camera Mounting (Robot to Camera)>`.
+:::
+
 ```{eval-rst}
 .. tab-set-code::
     .. rli:: https://raw.githubusercontent.com/PhotonVision/photonvision/refs/heads/main/photonlib-java-examples/poseest/src/main/java/frc/robot/Constants.java

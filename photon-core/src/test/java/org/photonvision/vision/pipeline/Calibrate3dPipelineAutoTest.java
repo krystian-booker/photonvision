@@ -19,6 +19,7 @@ package org.photonvision.vision.pipeline;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
 import org.junit.jupiter.api.BeforeAll;
@@ -164,6 +165,33 @@ public class Calibrate3dPipelineAutoTest {
 
             // Board leaves the frame: exclusion zone is still drawn, current centroid is not
             runFrame(pipeline, -2000);
+        }
+    }
+
+    @Test
+    public void coverageGrowsAsTheBoardMovesAndOverlayDraws() {
+        try (Calibrate3dPipeline pipeline = createPipeline()) {
+            pipeline.getSettings().showCoverage = true;
+            assertEquals(0, pipeline.getCoverage());
+
+            // Overlay with nothing covered yet
+            runFrame(pipeline, 0);
+            runFrame(pipeline, 0);
+            runFrame(pipeline, 0);
+            assertEquals(1, pipeline.foundCornersList.size());
+            double first = pipeline.getCoverage();
+            assertTrue(first > 0 && first < 1, "coverage after one snapshot was " + first);
+
+            // Board shifted well to the side covers new cells
+            double shift = 0.3 * RESOLUTION.width;
+            runFrame(pipeline, shift);
+            runFrame(pipeline, shift);
+            runFrame(pipeline, shift);
+            assertEquals(2, pipeline.foundCornersList.size());
+            assertTrue(pipeline.getCoverage() > first, "coverage should grow");
+
+            pipeline.finishCalibration();
+            assertEquals(0, pipeline.getCoverage());
         }
     }
 }

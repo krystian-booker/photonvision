@@ -105,6 +105,7 @@ docs/reflectiveAndShape/index
 docs/objectDetection/index
 docs/driver-mode/index
 docs/calibration/calibration
+docs/calibration/robot-extrinsics
 ```
 
 ```{toctree}

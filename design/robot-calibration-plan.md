@@ -1,6 +1,8 @@
 # Robot Camera Calibration: Intrinsics + Robot-Frame Extrinsics
 
-Status: proposal / investigation. Nothing here is implemented yet.
+Status: implemented (phases 1–4, partially), pending real-robot validation. See
+[section 11](#11-implementation-status) for what was built, how it deviates from this plan, and
+what is still open.
 
 ## 1. Summary
 
@@ -319,3 +321,46 @@ Items from section 5, in `Calibrate3dPipeline`, `Calibrate3dPipe`, `CameraCalibr
 - Phoenix 6 non-FRC install / requirements: <https://v6.docs.ctr-electronics.com/en/stable/docs/installation/installation-nonfrc.html>
 - Pigeon 2 user guide: <https://ctre.download/files/user-manual/Pigeon2%20User's%20Guide.pdf>
 - Arducam external trigger docs: <https://docs.arducam.com/USB-Industrial-Camera/Connect-and-Sync-Multi-Stereo-Cameras/Hardware-Trigger-with-External-Signal/>
+
+## 11. Implementation status
+
+### Built
+
+| Area | Where |
+| --- | --- |
+| Solver | `photon-core/.../vision/calibration/extrinsic/ExtrinsicSolver.java`: pure-Java Levenberg-Marquardt over the factor graph in 4.5 (EJML dense normal equations, numeric Jacobians, Huber loss), closed-form planar hand-eye initialization, odometry scale estimation, marginal covariance per camera with axis-specific warnings. |
+| Capture | `ExtrinsicCalibrationManager.java`: stop-and-go state machine fed by every `VisionModule`'s results and odometry from `/photonvision/.robot/odometry`; median of several frames per stop; dataset import/export (`ExtrinsicDataset`). |
+| Storage / NT | `CameraConfiguration.robotToCamera` (`RobotToCamera` record: x/y/z m, roll/pitch/yaw deg, source, σ); published per camera as `robotToCamera` = `[x, y, z, qw, qx, qy, qz]` (empty when unknown). |
+| REST | `/api/extrinsics/{status,start,stop,reset,captureNow,removeStop,solve,commit,dataset}`, `/api/settings/camera/setRobotToCamera`. Websocket status event `extrinsicCalibration`. |
+| PhotonLib | `PhotonCamera.getRobotToCamera()` and `RobotCalibrationPublisher` in Java, C++ and Python. |
+| UI | Robot Calibration page (setup → capture → solve → save, dataset import/export) and a per-camera robot-to-camera card with manual entry. |
+| Intrinsics | Coverage grid: coverage % in the calibration status and a "Coverage" overlay that shades image regions no snapshot has covered. |
+| Docs | `docs/source/docs/calibration/robot-extrinsics.md`. |
+| Tests | Synthetic robot/tag/camera generator (projection via OpenCV); solver recovery in self-survey (floor tags, measured tag heights) and field-layout modes, degeneracy (spin-only, no datum), dataset JSON round trip, end-to-end capture state machine, coverage. |
+
+### Deviations from the plan
+
+- **No GTSAM/Ceres JNI.** The problem is small (a few hundred parameters), so a dense pure-Java
+  LM solves it in well under a second. That avoids a per-platform native artifact entirely.
+- **Measured-height tags as a datum.** Typical FRC cameras pitch up and can't see floor tags, so a
+  wall tag with a tape-measured center height is accepted as the height reference too.
+- **Conservative uncertainty.** Covariance is scaled by the reduced χ² but never shrunk, because
+  shrinking also hides odometry-driven uncertainty when corners happen to be cleaner than assumed.
+- **Gravity / Pigeon pitch-roll factors** were not added; the floor is assumed flat. The Pigeon
+  enters only through the odometry heading.
+- **PhotonPoseEstimator** was not changed. Teams pass `camera.getRobotToCamera()` to it (documented).
+
+### Synthetic results
+
+With 3 cameras, 64 stops, 0.3 px corner noise, 2% odometry scale error and realistic
+odometry noise, cameras are recovered within about 1–4 mm and 0.02–0.16°. The reported 1σ is about
+3–5 mm and 0.3° yaw.
+
+### Not done yet
+
+- **Validation on a real robot (phase 0 exit criterion).** Real odometry slip, UVC latency and
+  intrinsic errors are not modelled by the synthetic tests.
+- Mount drift monitor, Kalibr/Basalt export, fixture mode and hardware sync (phase 5).
+- Other intrinsic items from section 5: uncertainty-driven stop, blur metric, lens model selector,
+  repeatability check and a "calibrate all cameras" wizard.
+- Cameras on mechanisms, and multiple coprocessors sharing one session.

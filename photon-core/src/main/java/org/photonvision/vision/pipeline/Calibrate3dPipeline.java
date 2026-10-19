@@ -78,6 +78,14 @@ public class Calibrate3dPipeline
     // Number of frames used to calculate stability
     private static final int STABILITY_WINDOW = 3;
 
+    // Grid used to show which parts of the image still need board observations. Distortion is
+    // strongest at the edges and corners, so a calibration that never saw them extrapolates there.
+    static final int COVERAGE_COLS = 8;
+    static final int COVERAGE_ROWS = 6;
+
+    // Opacity of the tint drawn over image regions no snapshot has covered
+    private static final double COVERAGE_TINT_ALPHA = 0.35;
+
     private final ArrayDeque<Point> recentCentroids = new ArrayDeque<>();
 
     private Point lastSnapshotCentroid = null;
@@ -165,6 +173,10 @@ public class Calibrate3dPipeline
             autoTakeSnapshot(findBoardResult, inputColorMat);
         }
 
+        if (settings.showCoverage) {
+            drawCoverage(outputColorCVMat.getMat());
+        }
+
         if (settings.showExclusionZone) {
             if (lastSnapshotCentroid != null) {
                 drawExclusionZone(outputColorCVMat.getMat());
@@ -238,6 +250,71 @@ public class Calibrate3dPipeline
                 new Point(center.x, center.y + crosshair),
                 color,
                 thickness);
+    }
+
+    /**
+     * Which cells of a {@link #COVERAGE_COLS} x {@link #COVERAGE_ROWS} grid over the image contain at
+     * least one corner from the snapshots taken so far.
+     */
+    boolean[][] computeCoverage() {
+        boolean[][] covered = new boolean[COVERAGE_ROWS][COVERAGE_COLS];
+        for (var snapshot : foundCornersList) {
+            double w = snapshot.size.width;
+            double h = snapshot.size.height;
+            if (w <= 0 || h <= 0) continue;
+            for (var p : snapshot.imagePoints.toList()) {
+                int col = (int) Math.floor(p.x / w * COVERAGE_COLS);
+                int row = (int) Math.floor(p.y / h * COVERAGE_ROWS);
+                if (col >= 0 && col < COVERAGE_COLS && row >= 0 && row < COVERAGE_ROWS) {
+                    covered[row][col] = true;
+                }
+            }
+        }
+        return covered;
+    }
+
+    /** Fraction (0-1) of coverage grid cells containing at least one snapshot corner. */
+    double getCoverage() {
+        int count = 0;
+        for (var row : computeCoverage()) {
+            for (boolean c : row) if (c) count++;
+        }
+        return count / (double) (COVERAGE_ROWS * COVERAGE_COLS);
+    }
+
+    /** Tints every grid cell that no snapshot has covered yet. */
+    private void drawCoverage(Mat image) {
+        boolean[][] covered = computeCoverage();
+        double cellW = image.cols() / (double) COVERAGE_COLS;
+        double cellH = image.rows() / (double) COVERAGE_ROWS;
+        var color = ColorHelper.colorToScalar(Color.ORANGE);
+
+        Mat mask = Mat.zeros(image.size(), CvType.CV_8UC1);
+        Mat tint = new Mat(image.size(), image.type(), color);
+        Mat blended = new Mat();
+        try {
+            boolean any = false;
+            for (int r = 0; r < COVERAGE_ROWS; r++) {
+                for (int c = 0; c < COVERAGE_COLS; c++) {
+                    if (covered[r][c]) continue;
+                    any = true;
+                    Imgproc.rectangle(
+                            mask,
+                            new Point(c * cellW, r * cellH),
+                            new Point((c + 1) * cellW, (r + 1) * cellH),
+                            new Scalar(255),
+                            Imgproc.FILLED);
+                }
+            }
+            if (any) {
+                Core.addWeighted(tint, COVERAGE_TINT_ALPHA, image, 1.0 - COVERAGE_TINT_ALPHA, 0, blended);
+                blended.copyTo(image, mask);
+            }
+        } finally {
+            mask.release();
+            tint.release();
+            blended.release();
+        }
     }
 
     /** Draws the detected centroid of the board in the current frame as a bright green crosshair. */
@@ -406,9 +483,8 @@ public class Calibrate3dPipeline
     }
 
     public void broadcastState() {
-        Map<String, Object> state =
-                SerializationUtils.objectToHashMap(
-                        new UICalibrationData(
+        var data =
+                new UICalibrationData(
                                 foundCornersList.size(),
                                 settings.cameraVideoModeIndex,
                                 Units.metersToInches(settings.gridSize),
@@ -419,7 +495,9 @@ public class Calibrate3dPipeline
                                 settings.useOldPattern,
                                 settings.tagFamily,
                                 settings.autoCalibrate,
-                                movedFarEnough));
+                                movedFarEnough);
+        data.coverage = getCoverage();
+        Map<String, Object> state = SerializationUtils.objectToHashMap(data);
 
         DataChangeService.getInstance()
                 .publishEvent(OutgoingUIEvent.wrappedOf("calibrationData", state));
