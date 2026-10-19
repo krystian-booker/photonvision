@@ -76,6 +76,47 @@ model {
             nativeUtils.useRequiredLibrary(it, "fields_shared")
             nativeUtils.useRequiredLibrary(it, "opencv_shared")
         }
+        // GPU AprilTag detector: vendored vkapriltag (Vulkan compute) plus the AprilTag 3 copy it
+        // decodes with. Linux only; statically linked into the JNI library. Vendored code builds
+        // with warnings off, and every symbol is renamed (symbol_prefix.h) and hidden so it can't
+        // collide with WPILib's apriltag. Vulkan is loaded at runtime (vulkan_loader_shim.cpp).
+        "photongpuapriltag"(NativeLibrarySpec) {
+            sources {
+                c {
+                    source {
+                        srcDirs 'src/main/native/thirdparty/apriltag3/src'
+                        include '**/*.c'
+                    }
+                    exportedHeaders {
+                        srcDirs 'src/main/native/gpu/include',
+                                'src/main/native/thirdparty/apriltag3/include',
+                                'src/main/native/thirdparty/apriltag3/include/common'
+                    }
+                }
+                cpp {
+                    source {
+                        srcDirs 'src/main/native/thirdparty/vkapriltag/src', 'src/main/native/gpu/cpp'
+                        include '**/*.cpp'
+                    }
+                    exportedHeaders {
+                        srcDirs 'src/main/native/gpu/include',
+                                'src/main/native/thirdparty/vkapriltag/include',
+                                'src/main/native/thirdparty/apriltag3/include',
+                                'src/main/native/thirdparty/apriltag3/include/common',
+                                'src/main/native/thirdparty/vulkan-headers/include'
+                    }
+                }
+            }
+            binaries.all {
+                if (!it.targetPlatform.operatingSystem.isLinux() || it instanceof SharedLibraryBinarySpec) {
+                    it.buildable = false
+                    return
+                }
+                def prefixHeader = file('src/main/native/gpu/include/photon/gpu/symbol_prefix.h').absolutePath
+                it.cCompiler.args << '-include' << prefixHeader << '-std=gnu17' << '-w' << '-fPIC' << '-fvisibility=hidden'
+                it.cppCompiler.args << '-include' << prefixHeader << '-w' << '-fPIC' << '-fvisibility=hidden' << '-DVKAPRILTAG_PROFILING=0'
+            }
+        }
         "${nativeName}JNI"(JniNativeLibrarySpec) {
 
             enableCheckTask project.hasProperty('doJniCheck')
@@ -94,6 +135,10 @@ model {
 
             binaries.all {
                 lib library: nativeName, linkage: 'shared'
+                if (it.targetPlatform.operatingSystem.isLinux()) {
+                    lib library: 'photongpuapriltag', linkage: 'static'
+                    it.linker.args << '-ldl' << '-pthread'
+                }
             }
 
             nativeUtils.useRequiredLibrary(it, "wpiutil_shared")

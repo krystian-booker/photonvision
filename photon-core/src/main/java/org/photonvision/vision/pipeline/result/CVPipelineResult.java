@@ -37,6 +37,9 @@ public class CVPipelineResult implements Releasable {
     public Optional<MultiTargetPNPResult> multiTagResult;
     public final List<String> objectDetectionClassNames;
 
+    /** Which AprilTag detector produced this result ("CPU", "GPU (2.1 ms)", ...), or null. */
+    public String detectorBackend = null;
+
     public CVPipelineResult(
             long sequenceID,
             double processingNanos,

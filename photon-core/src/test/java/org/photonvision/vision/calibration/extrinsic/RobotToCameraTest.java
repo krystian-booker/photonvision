@@ -33,8 +33,7 @@ import org.wpilib.math.geometry.Translation3d;
 public class RobotToCameraTest {
     @Test
     public void cameraConfigurationRoundTrip() {
-        var config =
-                new CameraConfiguration("cam", PVCameraInfo.fromFileInfo("cam", "/dev/video99"));
+        var config = new CameraConfiguration("cam", PVCameraInfo.fromFileInfo("cam", "/dev/video99"));
         var type = Jsonb.instance().type(CameraConfiguration.class);
 
         // Older configs have no robotToCamera at all

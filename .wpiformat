@@ -8,6 +8,10 @@ generatedFileExclude {
   photon-targeting/src/main/native/cpp/photon/constrained_solvepnp/generate/
   photon-serde-tests/src
   photon-serde-tests/py
+  photon-targeting/src/main/native/thirdparty/
+  photon-targeting/src/main/native/gpu/cpp/embedded_shaders.cpp
+  photon-targeting/src/main/native/gpu/cpp/vulkan_loader_shim.cpp
+  photon-targeting/src/main/native/gpu/include/photon/gpu/symbol_prefix.h
 }
 
 licenseUpdateExclude {

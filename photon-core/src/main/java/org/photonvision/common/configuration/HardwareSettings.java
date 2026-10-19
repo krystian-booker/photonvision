@@ -18,16 +18,22 @@
 package org.photonvision.common.configuration;
 
 import io.avaje.jsonb.Json;
+import java.util.Objects;
+import org.photonvision.vision.apriltag.AprilTagAcceleration;
 
 @Json
 public class HardwareSettings {
     public int ledBrightnessPercentage = 100;
+
+    /** Where AprilTag detection runs. AUTO uses the GPU on validated platforms (Rubik Pi 3). */
+    public AprilTagAcceleration aprilTagAcceleration = AprilTagAcceleration.AUTO;
 
     @Override
     public int hashCode() {
         final int prime = 31;
         int result = 1;
         result = prime * result + ledBrightnessPercentage;
+        result = prime * result + Objects.hashCode(aprilTagAcceleration);
         return result;
     }
 
@@ -38,11 +44,16 @@ public class HardwareSettings {
         if (getClass() != obj.getClass()) return false;
         HardwareSettings other = (HardwareSettings) obj;
         if (ledBrightnessPercentage != other.ledBrightnessPercentage) return false;
+        if (aprilTagAcceleration != other.aprilTagAcceleration) return false;
         return true;
     }
 
     @Override
     public String toString() {
-        return "HardwareSettings [ledBrightnessPercentage=" + ledBrightnessPercentage + "]";
+        return "HardwareSettings [ledBrightnessPercentage="
+                + ledBrightnessPercentage
+                + ", aprilTagAcceleration="
+                + aprilTagAcceleration
+                + "]";
     }
 }

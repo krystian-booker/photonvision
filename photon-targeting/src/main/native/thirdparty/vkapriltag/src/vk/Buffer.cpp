@@ -1,0 +1,339 @@
+#include "vkapriltag/vk/Buffer.h"
+
+#include <algorithm>
+#include <cstring>
+#include <stdexcept>
+#include <utility>
+
+#ifndef _WIN32
+#include <unistd.h>
+#endif
+
+namespace apriltag_vulkan::vk {
+
+namespace {
+
+struct MemoryRequest {
+  VkMemoryPropertyFlags required;
+  VkMemoryPropertyFlags preferred;
+  bool map;
+};
+
+MemoryRequest RequestFor(const Context &ctx, MemoryKind kind) {
+  switch (kind) {
+    case MemoryKind::DeviceLocal:
+      return {VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0, false};
+    case MemoryKind::HostVisible:
+      return {VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, 0, true};
+    case MemoryKind::HostVisibleCached:
+      // COHERENT is not required; Read()/Write() flush/invalidate when the type is non-coherent.
+      return {VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
+              ctx.caps().has_host_cached
+                  ? static_cast<VkMemoryPropertyFlags>(VK_MEMORY_PROPERTY_HOST_CACHED_BIT)
+                  : static_cast<VkMemoryPropertyFlags>(0),
+              true};
+    case MemoryKind::DeviceLocalMapped:
+      return {VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                  VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+              0, true};
+    case MemoryKind::DeviceLocalReadback:
+      // Shader-written memory the host reads; the caller must check host_cached() and keep a
+      // staging path.
+      return {VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
+              static_cast<VkMemoryPropertyFlags>(VK_MEMORY_PROPERTY_HOST_CACHED_BIT), true};
+  }
+  return {VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0, false};
+}
+
+}  // namespace
+
+Buffer::Buffer(const Context &ctx, VkDeviceSize size, VkBufferUsageFlags usage, MemoryKind kind,
+               const std::vector<uint32_t> &concurrent_families)
+    : device_(ctx.device()), size_(std::max<VkDeviceSize>(size, 4)) {
+  VkBufferCreateInfo buffer_info{};
+  buffer_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+  buffer_info.size = size_;
+  buffer_info.usage = usage;
+  buffer_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+  if (concurrent_families.size() >= 2) {
+    buffer_info.sharingMode = VK_SHARING_MODE_CONCURRENT;
+    buffer_info.queueFamilyIndexCount = static_cast<uint32_t>(concurrent_families.size());
+    buffer_info.pQueueFamilyIndices = concurrent_families.data();
+  }
+  CheckVk(vkCreateBuffer(device_, &buffer_info, nullptr, &buffer_), "vkCreateBuffer");
+
+  VkMemoryRequirements mem_reqs{};
+  vkGetBufferMemoryRequirements(device_, buffer_, &mem_reqs);
+
+  MemoryRequest request = RequestFor(ctx, kind);
+  uint32_t type_index =
+      ctx.FindMemoryType(mem_reqs.memoryTypeBits, request.required, request.preferred);
+
+  // Best-effort: falls back to plain device-local, and the caller stages via a host buffer.
+  if (type_index == UINT32_MAX &&
+      (kind == MemoryKind::DeviceLocalMapped || kind == MemoryKind::DeviceLocalReadback)) {
+    request = RequestFor(ctx, MemoryKind::DeviceLocal);
+    type_index = ctx.FindMemoryType(mem_reqs.memoryTypeBits, request.required, request.preferred);
+  }
+  if (type_index == UINT32_MAX) {
+    vkDestroyBuffer(device_, buffer_, nullptr);
+    buffer_ = VK_NULL_HANDLE;
+    throw std::runtime_error("No Vulkan memory type satisfies this buffer's requirements");
+  }
+
+  VkMemoryAllocateInfo alloc_info{};
+  alloc_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+  alloc_info.allocationSize = mem_reqs.size;
+  alloc_info.memoryTypeIndex = type_index;
+  CheckVk(vkAllocateMemory(device_, &alloc_info, nullptr, &memory_), "vkAllocateMemory");
+  CheckVk(vkBindBufferMemory(device_, buffer_, memory_, 0), "vkBindBufferMemory");
+
+  // Map once, for the buffer's whole lifetime.
+  if (request.map) {
+    CheckVk(vkMapMemory(device_, memory_, 0, VK_WHOLE_SIZE, 0, &mapped_), "vkMapMemory");
+    coherent_ = (ctx.MemoryTypeFlags(type_index) & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) != 0;
+    host_cached_ = (ctx.MemoryTypeFlags(type_index) & VK_MEMORY_PROPERTY_HOST_CACHED_BIT) != 0;
+    non_coherent_atom_size_ = ctx.caps().non_coherent_atom_size;
+  }
+}
+
+Buffer::~Buffer() { Destroy(); }
+
+namespace {
+
+VkBuffer CreateExternalBuffer(VkDevice device, VkDeviceSize size, VkBufferUsageFlags usage,
+                              VkExternalMemoryHandleTypeFlagBits handle_type) {
+  VkExternalMemoryBufferCreateInfo external{};
+  external.sType = VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_BUFFER_CREATE_INFO;
+  external.handleTypes = handle_type;
+  VkBufferCreateInfo info{};
+  info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+  info.pNext = &external;
+  info.size = size;
+  info.usage = usage;
+  info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+  VkBuffer buffer = VK_NULL_HANDLE;
+  CheckVk(vkCreateBuffer(device, &info, nullptr, &buffer), "vkCreateBuffer (external)");
+  return buffer;
+}
+
+uint32_t LowestSetBit(uint32_t bits) {
+  for (uint32_t i = 0; i < 32; ++i) {
+    if (bits & (1u << i)) return i;
+  }
+  return UINT32_MAX;
+}
+
+}  // namespace
+
+Buffer Buffer::ImportHostPointer(const Context &ctx, void *ptr, VkDeviceSize size,
+                                 VkBufferUsageFlags usage) {
+  Buffer b;
+  b.device_ = ctx.device();
+  b.size_ = size;
+  b.buffer_ = CreateExternalBuffer(b.device_, size, usage,
+                                   VK_EXTERNAL_MEMORY_HANDLE_TYPE_HOST_ALLOCATION_BIT_EXT);
+  VkMemoryRequirements reqs{};
+  vkGetBufferMemoryRequirements(b.device_, b.buffer_, &reqs);
+  const uint32_t type = LowestSetBit(reqs.memoryTypeBits & ctx.HostPointerMemoryTypeBits(ptr));
+  if (type == UINT32_MAX) throw std::runtime_error("No memory type can import this host pointer");
+
+  VkImportMemoryHostPointerInfoEXT import_info{};
+  import_info.sType = VK_STRUCTURE_TYPE_IMPORT_MEMORY_HOST_POINTER_INFO_EXT;
+  import_info.handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_HOST_ALLOCATION_BIT_EXT;
+  import_info.pHostPointer = ptr;
+  VkMemoryAllocateInfo alloc{};
+  alloc.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+  alloc.pNext = &import_info;
+  alloc.allocationSize = size;
+  alloc.memoryTypeIndex = type;
+  CheckVk(vkAllocateMemory(b.device_, &alloc, nullptr, &b.memory_), "vkAllocateMemory (host import)");
+  CheckVk(vkBindBufferMemory(b.device_, b.buffer_, b.memory_, 0), "vkBindBufferMemory");
+  return b;
+}
+
+Buffer Buffer::ImportDmaBuf(const Context &ctx, int fd, VkDeviceSize size,
+                            VkBufferUsageFlags usage) {
+#ifdef _WIN32
+  (void)ctx; (void)fd; (void)size; (void)usage;
+  throw std::runtime_error("dma-buf import is not available on Windows");
+#else
+  Buffer b;
+  b.device_ = ctx.device();
+  b.size_ = size;
+  b.buffer_ = CreateExternalBuffer(b.device_, size, usage,
+                                   VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT);
+  VkMemoryRequirements reqs{};
+  vkGetBufferMemoryRequirements(b.device_, b.buffer_, &reqs);
+  const uint32_t type = LowestSetBit(reqs.memoryTypeBits & ctx.DmaBufMemoryTypeBits(fd));
+  if (type == UINT32_MAX) throw std::runtime_error("No memory type can import this dma-buf");
+
+  const int owned_fd = dup(fd);  // Vulkan takes ownership of the descriptor on success
+  if (owned_fd < 0) throw std::runtime_error("dup() of the dma-buf descriptor failed");
+  VkImportMemoryFdInfoKHR import_info{};
+  import_info.sType = VK_STRUCTURE_TYPE_IMPORT_MEMORY_FD_INFO_KHR;
+  import_info.handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT;
+  import_info.fd = owned_fd;
+  VkMemoryDedicatedAllocateInfo dedicated{};
+  dedicated.sType = VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO;
+  dedicated.buffer = b.buffer_;
+  import_info.pNext = &dedicated;
+  VkMemoryAllocateInfo alloc{};
+  alloc.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+  alloc.pNext = &import_info;
+  alloc.allocationSize = reqs.size;
+  alloc.memoryTypeIndex = type;
+  const VkResult r = vkAllocateMemory(b.device_, &alloc, nullptr, &b.memory_);
+  if (r != VK_SUCCESS) close(owned_fd);
+  CheckVk(r, "vkAllocateMemory (dma-buf import)");
+  CheckVk(vkBindBufferMemory(b.device_, b.buffer_, b.memory_, 0), "vkBindBufferMemory");
+  return b;
+#endif
+}
+
+void Buffer::Destroy() {
+  if (mapped_ != nullptr && memory_ != VK_NULL_HANDLE) {
+    vkUnmapMemory(device_, memory_);
+  }
+  if (buffer_) vkDestroyBuffer(device_, buffer_, nullptr);
+  if (memory_) vkFreeMemory(device_, memory_, nullptr);
+  buffer_ = VK_NULL_HANDLE;
+  memory_ = VK_NULL_HANDLE;
+  mapped_ = nullptr;
+  size_ = 0;
+}
+
+Buffer::Buffer(Buffer &&other) noexcept
+    : device_(other.device_),
+      buffer_(other.buffer_),
+      memory_(other.memory_),
+      size_(other.size_),
+      mapped_(other.mapped_),
+      coherent_(other.coherent_),
+      host_cached_(other.host_cached_),
+      non_coherent_atom_size_(other.non_coherent_atom_size_) {
+  other.buffer_ = VK_NULL_HANDLE;
+  other.memory_ = VK_NULL_HANDLE;
+  other.mapped_ = nullptr;
+  other.size_ = 0;
+}
+
+Buffer &Buffer::operator=(Buffer &&other) noexcept {
+  if (this != &other) {
+    Destroy();
+    device_ = other.device_;
+    buffer_ = other.buffer_;
+    memory_ = other.memory_;
+    size_ = other.size_;
+    mapped_ = other.mapped_;
+    coherent_ = other.coherent_;
+    host_cached_ = other.host_cached_;
+    non_coherent_atom_size_ = other.non_coherent_atom_size_;
+    other.buffer_ = VK_NULL_HANDLE;
+    other.memory_ = VK_NULL_HANDLE;
+    other.mapped_ = nullptr;
+    other.size_ = 0;
+  }
+  return *this;
+}
+
+namespace {
+// Flush/invalidate need an offset aligned to nonCoherentAtomSize and a size that is a multiple of
+// it or VK_WHOLE_SIZE; the range is rounded outward.
+VkMappedMemoryRange AlignedRange(VkDeviceMemory memory, VkDeviceSize offset, VkDeviceSize bytes,
+                                 VkDeviceSize atom, VkDeviceSize buffer_size) {
+  const VkDeviceSize aligned_offset = (offset / atom) * atom;
+  const VkDeviceSize end = std::min(offset + bytes, buffer_size);
+  VkDeviceSize aligned_size = ((end - aligned_offset + atom - 1) / atom) * atom;
+  aligned_size = std::min(aligned_size, buffer_size - aligned_offset);
+
+  VkMappedMemoryRange range{};
+  range.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
+  range.memory = memory;
+  range.offset = aligned_offset;
+  range.size = aligned_size;
+  return range;
+}
+}  // namespace
+
+void Buffer::Write(const void *src, VkDeviceSize bytes, VkDeviceSize offset) {
+  if (mapped_ == nullptr) {
+    throw std::runtime_error("Buffer::Write on a buffer that is not host visible");
+  }
+  if (offset + bytes > size_) {
+    throw std::runtime_error("Buffer::Write out of range");
+  }
+  std::memcpy(static_cast<uint8_t *>(mapped_) + offset, src, static_cast<size_t>(bytes));
+  if (!coherent_ && bytes > 0) {
+    VkMappedMemoryRange range =
+        AlignedRange(memory_, offset, bytes, non_coherent_atom_size_, size_);
+    vkFlushMappedMemoryRanges(device_, 1, &range);
+  }
+}
+
+void Buffer::Read(void *dst, VkDeviceSize bytes, VkDeviceSize offset) const {
+  if (mapped_ == nullptr) {
+    throw std::runtime_error("Buffer::Read on a buffer that is not host visible");
+  }
+  if (offset + bytes > size_) {
+    throw std::runtime_error("Buffer::Read out of range");
+  }
+  if (!coherent_ && bytes > 0) {
+    VkMappedMemoryRange range =
+        AlignedRange(memory_, offset, bytes, non_coherent_atom_size_, size_);
+    vkInvalidateMappedMemoryRanges(device_, 1, &range);
+  }
+  std::memcpy(dst, static_cast<const uint8_t *>(mapped_) + offset, static_cast<size_t>(bytes));
+}
+
+void Buffer::InvalidateRange(VkDeviceSize offset, VkDeviceSize bytes) const {
+  // Read()'s invalidate without the copy; a no-op on coherent memory.
+  if (mapped_ == nullptr) {
+    throw std::runtime_error("Buffer::InvalidateRange on a buffer that is not host visible");
+  }
+  if (offset + bytes > size_) {
+    throw std::runtime_error("Buffer::InvalidateRange out of range");
+  }
+  if (!coherent_ && bytes > 0) {
+    VkMappedMemoryRange range =
+        AlignedRange(memory_, offset, bytes, non_coherent_atom_size_, size_);
+    vkInvalidateMappedMemoryRanges(device_, 1, &range);
+  }
+}
+
+void Buffer::RecordCopyFrom(VkCommandBuffer cmd, const Buffer &src, VkDeviceSize bytes,
+                            VkDeviceSize src_offset, VkDeviceSize dst_offset) const {
+  if (bytes == 0) return;
+  VkBufferCopy region{};
+  region.srcOffset = src_offset;
+  region.dstOffset = dst_offset;
+  region.size = bytes;
+  vkCmdCopyBuffer(cmd, src.buffer_, buffer_, 1, &region);
+}
+
+void Buffer::RecordCopyTo(VkCommandBuffer cmd, const Buffer &dst, VkDeviceSize bytes,
+                          VkDeviceSize src_offset, VkDeviceSize dst_offset) const {
+  if (bytes == 0) return;
+  VkBufferCopy region{};
+  region.srcOffset = src_offset;
+  region.dstOffset = dst_offset;
+  region.size = bytes;
+  vkCmdCopyBuffer(cmd, buffer_, dst.buffer_, 1, &region);
+}
+
+void Buffer::FillZero(VkCommandBuffer cmd) const {
+  vkCmdFillBuffer(cmd, buffer_, 0, size_, 0);
+}
+
+void Buffer::FillZeroRange(VkCommandBuffer cmd, VkDeviceSize offset, VkDeviceSize bytes) const {
+  if (bytes == 0) return;
+  // vkCmdFillBuffer needs a 4-byte aligned offset and size.
+  const VkDeviceSize aligned_offset = offset & ~VkDeviceSize(3);
+  VkDeviceSize aligned_bytes = (bytes + (offset - aligned_offset) + 3) & ~VkDeviceSize(3);
+  if (aligned_offset >= size_) return;
+  aligned_bytes = std::min(aligned_bytes, size_ - aligned_offset);
+  if (aligned_bytes == 0) return;
+  vkCmdFillBuffer(cmd, buffer_, aligned_offset, aligned_bytes, 0);
+}
+
+}  // namespace apriltag_vulkan::vk

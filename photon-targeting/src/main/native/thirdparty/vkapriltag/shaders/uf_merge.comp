@@ -1,0 +1,8 @@
+#version 450
+// 32-bit Thresholded variant; see uf_merge_body.glsl.
+#extension GL_GOOGLE_include_directive : require
+
+layout(std430, binding = 1) readonly buffer Thresholded { uint thresholded[]; };
+#define THRESHOLDED_AT(index) thresholded[index]
+
+#include "uf_merge_body.glsl"

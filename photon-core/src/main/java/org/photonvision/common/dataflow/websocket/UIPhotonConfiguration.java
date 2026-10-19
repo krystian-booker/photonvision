@@ -18,6 +18,7 @@
 package org.photonvision.common.dataflow.websocket;
 
 import io.avaje.jsonb.Json;
+import java.util.ArrayList;
 import java.util.List;
 import org.photonvision.PhotonVersion;
 import org.photonvision.common.LoadJNI;
@@ -29,6 +30,9 @@ import org.photonvision.common.hardware.OsImageData;
 import org.photonvision.common.hardware.Platform;
 import org.photonvision.common.networking.NetworkManager;
 import org.photonvision.common.networking.NetworkUtils;
+import org.photonvision.vision.apriltag.AprilTagAcceleration;
+import org.photonvision.vision.apriltag.GpuAprilTagDetector;
+import org.photonvision.vision.pipe.impl.AprilTagDetectionPipe;
 import org.photonvision.vision.processes.VisionModule;
 import org.photonvision.vision.processes.VisionSourceManager;
 
@@ -44,6 +48,37 @@ public class UIPhotonConfiguration {
     }
 
     public static UIPhotonConfiguration programStateToUi(PhotonConfiguration c) {
+        var ui = buildUi(c);
+        var general = ui.settings.general;
+        var mode = c.getHardwareSettings().aprilTagAcceleration;
+        general.aprilTagAcceleration = mode.name();
+        // Only probe the GPU where it would be used: creating a Vulkan device on an untested driver
+        // is not free of risk
+        if (AprilTagDetectionPipe.gpuRequested(mode)) {
+            var gpu = GpuAprilTagDetector.queryDevice(false);
+            general.gpuAprilTagAvailable = gpu.available();
+            general.gpuAprilTagStatus = gpu.description();
+        } else {
+            general.gpuAprilTagAvailable = false;
+            general.gpuAprilTagStatus =
+                    mode == AprilTagAcceleration.CPU
+                            ? "Disabled (CPU selected)"
+                            : "Not enabled by default on this platform (select GPU to try it)";
+        }
+        return ui;
+    }
+
+    private static String describeGpuAcceleration(PhotonConfiguration c) {
+        List<String> parts = new ArrayList<>();
+        if (LoadJNI.hasLoaded(JNITypes.LIBCAMERA)) parts.add("Zerocopy Libcamera Working");
+        if (AprilTagDetectionPipe.gpuRequested(c.getHardwareSettings().aprilTagAcceleration)
+                && GpuAprilTagDetector.queryDevice(false).available()) {
+            parts.add("Vulkan AprilTag detection");
+        }
+        return String.join(", ", parts);
+    }
+
+    private static UIPhotonConfiguration buildUi(PhotonConfiguration c) {
         return new UIPhotonConfiguration(
                 new UIProgramSettings(
                         new UINetConfig(
@@ -58,8 +93,7 @@ public class UIPhotonConfiguration {
                                 OsImageData.IMAGE_METADATA.isPresent()
                                         ? OsImageData.IMAGE_METADATA.get().commitTag()
                                         : "",
-                                // TODO add support for other types of GPU accel
-                                LoadJNI.hasLoaded(JNITypes.LIBCAMERA) ? "Zerocopy Libcamera Working" : "",
+                                describeGpuAcceleration(c),
                                 LoadJNI.hasLoaded(JNITypes.MRCAL),
                                 c.getNeuralNetworkProperties().getModels(),
                                 NeuralNetworkModelManager.getInstance().getSupportedBackends(),

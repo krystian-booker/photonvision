@@ -59,4 +59,9 @@ public class UIGeneralSettings {
     public String wpilibArch;
     public boolean conflictingHostname;
     public String conflictingCameras;
+
+    // Where AprilTag detection runs (AUTO/GPU/CPU) and what the GPU probe found
+    public String aprilTagAcceleration = "AUTO";
+    public boolean gpuAprilTagAvailable = false;
+    public String gpuAprilTagStatus = "";
 }

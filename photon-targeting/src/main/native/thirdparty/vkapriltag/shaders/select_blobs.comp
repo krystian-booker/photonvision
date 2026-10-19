@@ -1,0 +1,85 @@
+#version 450
+// Filters raw blob extents down to tag-quad candidates by size, bounding box and border polarity
+// (mirrors SelectBlobs). Survivors are compacted into selected[], capped at max_blobs; remap[]
+// maps each raw blob index to its selected index, or 0xFFFFFFFF if rejected.
+#extension GL_GOOGLE_include_directive : require
+#include "common.glsl"
+
+layout(local_size_x_id = 0, local_size_x = 256) in;
+
+layout(std430, binding = 0) readonly buffer Extents { MinMaxExtentsGpu extents[]; };
+layout(std430, binding = 1) writeonly buffer Selected { MinMaxExtentsGpu selected[]; };
+layout(std430, binding = 2) buffer Counter { uint counter; };
+layout(std430, binding = 3) writeonly buffer Remap { uint remap[]; };
+
+layout(push_constant) uniform PushConstants {
+  uint max_raw_blobs;
+  uint max_blobs;
+  uint tag_width;
+  uint min_cluster_pixels;
+  uint max_cluster_pixels;
+  uint reversed_border; // bool as uint
+  uint normal_border;   // bool as uint
+  // Non-zero when extents[] came from reduce_extents_hash_atomic64.comp, which stores
+  // gx_sum/gy_sum as (true sum + count).
+  uint gx_gy_biased;
+  // Geometric prefilters; 0 disables each. See DetectorConfig::aspect_max/fill_min/fill_max.
+  float aspect_max;
+  float fill_min;
+  float fill_max;
+} pc;
+
+// Border polarity test (MinMaxExtents::dot() < 0) without float64: tests the sign of
+//   2*dot = sum2 - 0.10236 * gx_sum + 0.057162 * gy_sum
+// with sum2 in int32 and the sub-pixel correction in fp32.
+bool hasReversedBorder(MinMaxExtentsGpu e) {
+  int sum2 = e.pxgx_plus_pygy_sum * 2 -
+             (e.min_x + e.max_x) * e.gx_sum -
+             (e.min_y + e.max_y) * e.gy_sum;
+  float two_dot = float(sum2) - 0.10236 * float(e.gx_sum) + 0.057162 * float(e.gy_sum);
+  return two_dot < 0.0;
+}
+
+void main() {
+  uint i = gl_GlobalInvocationID.x;
+  if (i >= pc.max_raw_blobs) return;
+
+  remap[i] = 0xFFFFFFFFu;
+
+  MinMaxExtentsGpu e = extents[i];
+  // Removes the per-point +1 bias.
+  if (pc.gx_gy_biased != 0u) {
+    e.gx_sum -= int(e.count);
+    e.gy_sum -= int(e.count);
+  }
+  if (e.count < pc.min_cluster_pixels) return;
+  if (e.count > pc.max_cluster_pixels) return;
+
+  // Rejects degenerate bounding boxes, then applies the optional aspect and fill filters.
+  uint bbox_w = uint(e.max_x - e.min_x);
+  uint bbox_h = uint(e.max_y - e.min_y);
+  if (bbox_w == 0u || bbox_h == 0u) return;
+
+  if (pc.aspect_max > 0.0) {
+    float long_side = float(max(bbox_w, bbox_h));
+    float short_side = float(min(bbox_w, bbox_h));
+    if (long_side > short_side * pc.aspect_max) return;
+  }
+
+  if (pc.fill_min > 0.0 || pc.fill_max > 0.0) {
+    float perimeter = 2.0 * float(bbox_w + bbox_h);
+    float fill = float(e.count) / perimeter;
+    if (pc.fill_min > 0.0 && fill < pc.fill_min) return;
+    if (pc.fill_max > 0.0 && fill > pc.fill_max) return;
+  }
+
+  bool quad_reversed_border = hasReversedBorder(e);
+  if (pc.reversed_border == 0u && quad_reversed_border) return;
+  if (pc.normal_border == 0u && !quad_reversed_border) return;
+
+  uint pos = atomicAdd(counter, 1u);
+  if (pos >= pc.max_blobs) return;
+
+  selected[pos] = e;
+  remap[i] = pos;
+}

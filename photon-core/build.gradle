@@ -88,3 +88,9 @@ task writeCurrentVersion {
 sourceSets.main.java.srcDir "${buildDir}/generated/java/"
 
 compileJava.dependsOn writeCurrentVersion
+
+test {
+    // Lets the GPU AprilTag tests run on a software Vulkan device (Mesa lavapipe) when no GPU is
+    // present. Production never sets this, so a software device is never used for real detection.
+    environment 'APRILTAG_VK_ALLOW_CPU', '1'
+}

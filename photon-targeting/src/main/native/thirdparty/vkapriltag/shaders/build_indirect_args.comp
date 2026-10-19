@@ -1,0 +1,33 @@
+#version 450
+// Builds a VkDispatchIndirectCommand from a device-side count. groupCountX is
+// rounded up, so the last group may run past the count; consumers bounds-check.
+layout(local_size_x_id = 0, local_size_x = 1) in;
+
+// Writes one VkDispatchIndirectCommand to slot `pc.slot` from the counter at
+// binding 0:
+//
+//   0  raw blob count       -> init_extents, merge_extents, select_blobs
+//   1  boundary point count -> hash_group, reduce_extents_hash, scatter
+//   2  selected blob count  -> sort_points_local (one workgroup per blob)
+//
+// divide_by_workgroup_size == 0 gives one workgroup per item; clamp_to bounds
+// the count.
+layout(std430, binding = 0) readonly buffer Count { uint count; };
+layout(std430, binding = 1) writeonly buffer IndirectArgs { uint args[]; };
+
+layout(push_constant) uniform PushConstants {
+  uint workgroup_size;
+  uint slot;
+  uint divide_by_workgroup_size;
+  uint clamp_to;
+} pc;
+
+void main() {
+  uint n = min(count, pc.clamp_to);
+  uint groups = (pc.divide_by_workgroup_size != 0u)
+                    ? ((n + pc.workgroup_size - 1u) / pc.workgroup_size)
+                    : n;
+  args[pc.slot * 3u + 0u] = groups;
+  args[pc.slot * 3u + 1u] = 1u;
+  args[pc.slot * 3u + 2u] = 1u;
+}

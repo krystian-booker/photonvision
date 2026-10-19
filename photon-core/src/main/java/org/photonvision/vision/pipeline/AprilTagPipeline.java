@@ -106,7 +106,11 @@ public class AprilTagPipeline extends CVPipeline<CVPipelineResult, AprilTagPipel
         quadParams.deglitch = false;
 
         aprilTagDetectionPipe.setParams(
-                new AprilTagDetectionPipeParams(settings.tagFamily, config, quadParams));
+                new AprilTagDetectionPipeParams(
+                        settings.tagFamily,
+                        config,
+                        quadParams,
+                        ConfigProvider.getInstance().getConfig().getHardwareSettings().aprilTagAcceleration));
 
         if (frameStaticProperties.cameraCalibration != null) {
             var cameraMatrix = frameStaticProperties.cameraCalibration.getCameraIntrinsicsMat();
@@ -246,8 +250,26 @@ public class AprilTagPipeline extends CVPipeline<CVPipelineResult, AprilTagPipel
         var fpsResult = calculateFPSPipe.run(null);
         var fps = fpsResult.output;
 
-        return new CVPipelineResult(
-                frame.sequenceID, sumPipeNanosElapsed, fps, targetList, multiTagResult, frame);
+        var result =
+                new CVPipelineResult(
+                        frame.sequenceID, sumPipeNanosElapsed, fps, targetList, multiTagResult, frame);
+        result.detectorBackend = describeBackend();
+        return result;
+    }
+
+    /** "GPU (x ms)" or "CPU", plus why the GPU isn't used when it was requested. */
+    private String describeBackend() {
+        if (aprilTagDetectionPipe.getLastBackend() == AprilTagDetectionPipe.Backend.GPU) {
+            var t = aprilTagDetectionPipe.getLastGpuTimings();
+            return t == null ? "GPU" : String.format("GPU (%.1f ms)", t.totalMs());
+        }
+        var reason = aprilTagDetectionPipe.getGpuUnavailableReason();
+        return reason == null ? "CPU" : "CPU (GPU unavailable: " + reason + ")";
+    }
+
+    /** Which detector processed the last frame. */
+    public AprilTagDetectionPipe.Backend getLastDetectorBackend() {
+        return aprilTagDetectionPipe.getLastBackend();
     }
 
     @Override

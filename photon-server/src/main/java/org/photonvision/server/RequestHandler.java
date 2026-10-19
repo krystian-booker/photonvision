@@ -60,6 +60,7 @@ import org.photonvision.common.util.ShellExec;
 import org.photonvision.common.util.TimedTaskManager;
 import org.photonvision.common.util.file.ProgramDirectoryUtilities;
 import org.photonvision.tflite.TFLiteJNI.TFLiteSource;
+import org.photonvision.vision.apriltag.AprilTagAcceleration;
 import org.photonvision.vision.calibration.CameraCalibrationCoefficients;
 import org.photonvision.vision.calibration.extrinsic.ExtrinsicCalibrationManager;
 import org.photonvision.vision.calibration.extrinsic.ExtrinsicDataset;
@@ -1684,6 +1685,32 @@ public class RequestHandler {
         } catch (Exception e) {
             ctx.status(500).result("Failed to import dataset");
             logger.error("Failed to import robot calibration dataset", e);
+        }
+    }
+
+    @Json
+    record AprilTagAccelerationRequest(String mode) {}
+
+    /** Choose where AprilTag detection runs: AUTO, GPU or CPU. */
+    public static void onAprilTagAccelerationRequest(Context ctx) {
+        try {
+            var request = ctx.bodyAsClass(AprilTagAccelerationRequest.class);
+            var mode = AprilTagAcceleration.valueOf(request.mode().toUpperCase());
+            ConfigProvider.getInstance().getConfig().getHardwareSettings().aprilTagAcceleration = mode;
+            ConfigProvider.getInstance().requestSave();
+            DataChangeService.getInstance()
+                    .publishEvent(
+                            new OutgoingUIEvent<>(
+                                    "fullsettings",
+                                    UIPhotonConfiguration.programStateToUi(
+                                            ConfigProvider.getInstance().getConfig())));
+            ctx.status(200).result("AprilTag acceleration set to " + mode);
+            logger.info("AprilTag acceleration set to " + mode);
+        } catch (IllegalArgumentException
+                | NullPointerException
+                | IllegalStateException
+                | JsonException e) {
+            ctx.status(400).result("Mode must be one of AUTO, GPU, CPU");
         }
     }
 }

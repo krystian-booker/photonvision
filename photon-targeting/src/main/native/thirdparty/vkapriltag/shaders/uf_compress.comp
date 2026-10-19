@@ -1,0 +1,35 @@
+#version 450
+// Full path compression: every pixel's parent becomes its root.
+//
+// The store is skipped when the chain is already flat. With honour_changed_flag
+// set, the pass returns if changed_flag is 0 (the preceding uf_merge.comp
+// joined nothing); it is not set for the compression straight after
+// uf_init.comp, when the flag is still 0.
+layout(local_size_x_id = 0, local_size_x = 256) in;
+
+layout(std430, binding = 0) buffer Parent { uint parent[]; };
+layout(std430, binding = 1) readonly buffer Changed { uint changed_flag; };
+
+layout(push_constant) uniform PushConstants {
+  uint width;
+  uint height;
+  uint honour_changed_flag;
+} pc;
+
+void main() {
+  if (pc.honour_changed_flag != 0u && changed_flag == 0u) return;
+
+  uint i = gl_GlobalInvocationID.x;
+  uint total = pc.width * pc.height;
+  if (i >= total) return;
+
+  uint n = i;
+  uint p = parent[n];
+  const uint original = p;
+  while (p != n) {
+    n = p;
+    p = parent[n];
+  }
+  // Each thread owns parent[i], so `original` is still its current value.
+  if (n != original) parent[i] = n;
+}

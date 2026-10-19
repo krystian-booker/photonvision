@@ -485,17 +485,17 @@ public class Calibrate3dPipeline
     public void broadcastState() {
         var data =
                 new UICalibrationData(
-                                foundCornersList.size(),
-                                settings.cameraVideoModeIndex,
-                                Units.metersToInches(settings.gridSize),
-                                Units.metersToInches(settings.markerSize),
-                                settings.boardWidth,
-                                settings.boardHeight,
-                                settings.boardType,
-                                settings.useOldPattern,
-                                settings.tagFamily,
-                                settings.autoCalibrate,
-                                movedFarEnough);
+                        foundCornersList.size(),
+                        settings.cameraVideoModeIndex,
+                        Units.metersToInches(settings.gridSize),
+                        Units.metersToInches(settings.markerSize),
+                        settings.boardWidth,
+                        settings.boardHeight,
+                        settings.boardType,
+                        settings.useOldPattern,
+                        settings.tagFamily,
+                        settings.autoCalibrate,
+                        movedFarEnough);
         data.coverage = getCoverage();
         Map<String, Object> state = SerializationUtils.objectToHashMap(data);
 
